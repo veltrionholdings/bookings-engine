@@ -9,6 +9,7 @@
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { getRequestContext, requireAdmin } from '../utils/auth';
+import { normalizeEvent } from '../utils/event';
 import { success, created, noContent, error } from '../utils/response';
 import {
   listServices,
@@ -24,29 +25,29 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
   try {
     const context = getRequestContext(event);
     const serviceId = event.pathParameters?.id;
-    const path = event.resource;
+    const { method, route } = normalizeEvent(event);
 
-    if (path === '/services' && event.httpMethod === 'GET') {
+    if (route === '/services' && method === 'GET') {
       return handleList(context.tenant_id, event.queryStringParameters);
     }
-    if (path === '/services' && event.httpMethod === 'POST') {
+    if (route === '/services' && method === 'POST') {
       requireAdmin(context);
       return handleCreate(context.tenant_id, event.body);
     }
-    if (path === '/services/{id}' && event.httpMethod === 'GET') {
+    if (route === '/services/{id}' && method === 'GET') {
       return handleGet(context.tenant_id, serviceId!);
     }
-    if (path === '/services/{id}' && event.httpMethod === 'PATCH') {
+    if (route === '/services/{id}' && method === 'PATCH') {
       requireAdmin(context);
       return handleUpdate(context.tenant_id, serviceId!, event.body);
     }
-    if (path === '/services/{id}' && event.httpMethod === 'DELETE') {
+    if (route === '/services/{id}' && method === 'DELETE') {
       requireAdmin(context);
       await deactivateService(context.tenant_id, serviceId!);
       return noContent();
     }
 
-    return error(new ValidationError(`Unsupported route: ${event.httpMethod} ${path}`));
+    return error(new ValidationError(`Unsupported route: ${method} ${route}`));
   } catch (err) {
     return error(err);
   }
@@ -54,7 +55,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
 async function handleList(
   tenantId: string,
-  params: Record<string, string> | null
+  params: Record<string, string | undefined> | null
 ): Promise<APIGatewayProxyResult> {
   const filters = {
     resource_type_id: params?.resource_type_id,

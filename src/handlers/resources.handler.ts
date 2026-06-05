@@ -16,6 +16,7 @@
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { getRequestContext, requireAdmin } from '../utils/auth';
+import { normalizeEvent } from '../utils/event';
 import { success, created, noContent, error } from '../utils/response';
 import {
   listResources,
@@ -47,56 +48,56 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const context = getRequestContext(event);
     const resourceId = event.pathParameters?.id;
     const overrideId = event.pathParameters?.overrideId;
-    const path = event.resource; // API Gateway resource path pattern
+    const { method, route } = normalizeEvent(event);
 
     // Route based on path pattern and method
-    if (path === '/resources' && event.httpMethod === 'GET') {
+    if (route === '/resources' && method === 'GET') {
       return handleList(context.tenant_id, event.queryStringParameters);
     }
-    if (path === '/resources' && event.httpMethod === 'POST') {
+    if (route === '/resources' && method === 'POST') {
       requireAdmin(context);
       return handleCreate(context.tenant_id, event.body);
     }
-    if (path === '/resources/{id}' && event.httpMethod === 'GET') {
+    if (route === '/resources/{id}' && method === 'GET') {
       return handleGet(context.tenant_id, resourceId!);
     }
-    if (path === '/resources/{id}' && event.httpMethod === 'PATCH') {
+    if (route === '/resources/{id}' && method === 'PATCH') {
       requireAdmin(context);
       return handleUpdate(context.tenant_id, resourceId!, event.body);
     }
-    if (path === '/resources/{id}' && event.httpMethod === 'DELETE') {
+    if (route === '/resources/{id}' && method === 'DELETE') {
       requireAdmin(context);
       await deactivateResource(context.tenant_id, resourceId!);
       return noContent();
     }
-    if (path === '/resources/{id}/schedules' && event.httpMethod === 'GET') {
+    if (route === '/resources/{id}/schedules' && method === 'GET') {
       return handleGetSchedules(resourceId!);
     }
-    if (path === '/resources/{id}/schedules' && event.httpMethod === 'PUT') {
+    if (route === '/resources/{id}/schedules' && method === 'PUT') {
       requireAdmin(context);
       return handleSetSchedules(resourceId!, event.body);
     }
-    if (path === '/resources/{id}/overrides' && event.httpMethod === 'GET') {
+    if (route === '/resources/{id}/overrides' && method === 'GET') {
       return handleListOverrides(resourceId!, event.queryStringParameters);
     }
-    if (path === '/resources/{id}/overrides' && event.httpMethod === 'POST') {
+    if (route === '/resources/{id}/overrides' && method === 'POST') {
       requireAdmin(context);
       return handleCreateOverride(resourceId!, event.body);
     }
-    if (path === '/resources/{id}/overrides/{overrideId}' && event.httpMethod === 'DELETE') {
+    if (route === '/resources/{id}/overrides/{overrideId}' && method === 'DELETE') {
       requireAdmin(context);
       await deleteOverride(resourceId!, overrideId!);
       return noContent();
     }
-    if (path === '/resources/{id}/services' && event.httpMethod === 'GET') {
+    if (route === '/resources/{id}/services' && method === 'GET') {
       return handleGetServices(context.tenant_id, resourceId!);
     }
-    if (path === '/resources/{id}/services' && event.httpMethod === 'PUT') {
+    if (route === '/resources/{id}/services' && method === 'PUT') {
       requireAdmin(context);
       return handleSetServices(context.tenant_id, resourceId!, event.body);
     }
 
-    return error(new ValidationError(`Unsupported route: ${event.httpMethod} ${path}`));
+    return error(new ValidationError(`Unsupported route: ${method} ${route}`));
   } catch (err) {
     return error(err);
   }
@@ -104,7 +105,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
 async function handleList(
   tenantId: string,
-  params: Record<string, string> | null
+  params: Record<string, string | undefined> | null
 ): Promise<APIGatewayProxyResult> {
   const filters = {
     resource_type_id: params?.resource_type_id,
@@ -156,7 +157,7 @@ async function handleSetSchedules(resourceId: string, body: string | null): Prom
 
 async function handleListOverrides(
   resourceId: string,
-  params: Record<string, string> | null
+  params: Record<string, string | undefined> | null
 ): Promise<APIGatewayProxyResult> {
   const overrides = await listOverrides(resourceId, params?.from, params?.to);
   return success({ data: overrides });

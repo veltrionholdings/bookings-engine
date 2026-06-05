@@ -8,6 +8,7 @@
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { getRequestContext, requireAdmin } from '../utils/auth';
+import { normalizeEvent } from '../utils/event';
 import { success, created, error } from '../utils/response';
 import {
   listCustomers,
@@ -22,23 +23,23 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
   try {
     const context = getRequestContext(event);
     const customerId = event.pathParameters?.id;
-    const path = event.resource;
+    const { method, route } = normalizeEvent(event);
 
-    if (path === '/customers' && event.httpMethod === 'GET') {
+    if (route === '/customers' && method === 'GET') {
       requireAdmin(context);
       return handleList(context.tenant_id, event.queryStringParameters);
     }
-    if (path === '/customers' && event.httpMethod === 'POST') {
+    if (route === '/customers' && method === 'POST') {
       return handleCreate(context.tenant_id, event.body);
     }
-    if (path === '/customers/{id}' && event.httpMethod === 'GET') {
+    if (route === '/customers/{id}' && method === 'GET') {
       return handleGet(context.tenant_id, customerId!);
     }
-    if (path === '/customers/{id}' && event.httpMethod === 'PATCH') {
+    if (route === '/customers/{id}' && method === 'PATCH') {
       return handleUpdate(context.tenant_id, customerId!, event.body);
     }
 
-    return error(new ValidationError(`Unsupported route: ${event.httpMethod} ${path}`));
+    return error(new ValidationError(`Unsupported route: ${method} ${route}`));
   } catch (err) {
     return error(err);
   }
@@ -46,7 +47,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
 async function handleList(
   tenantId: string,
-  params: Record<string, string> | null
+  params: Record<string, string | undefined> | null
 ): Promise<APIGatewayProxyResult> {
   const search = params?.search;
   const limit = params?.limit ? parseInt(params.limit, 10) : 20;

@@ -2,17 +2,17 @@
  * CDK Stack for the Bookings Engine.
  *
  * Creates:
- * - RDS PostgreSQL instance (free tier eligible)
- * - Lambda functions for each API handler
+ * - RDS PostgreSQL instance (free tier, publicly accessible with security group)
+ * - Lambda functions for each API handler (outside VPC for simplicity)
  * - API Gateway HTTP API with JWT authorizer (Cognito)
  * - Cognito User Pool for authentication
- * - VPC for RDS connectivity
  */
 
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as authorizers from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
@@ -23,50 +23,43 @@ export class BookingsEngineStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // ─── VPC ──────────────────────────────────────────────────────────────────
+    // ─── VPC (minimal, for RDS only) ──────────────────────────────────────────
     const vpc = new ec2.Vpc(this, 'BookingsVpc', {
       maxAzs: 2,
-      natGateways: 0, // Save cost — use VPC endpoints or public subnets
+      natGateways: 0,
       subnetConfiguration: [
         {
           name: 'public',
           subnetType: ec2.SubnetType.PUBLIC,
           cidrMask: 24,
         },
-        {
-          name: 'isolated',
-          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
-          cidrMask: 24,
-        },
       ],
     });
 
-    // ─── Security Groups ──────────────────────────────────────────────────────
+    // ─── Security Group for RDS ───────────────────────────────────────────────
     const dbSecurityGroup = new ec2.SecurityGroup(this, 'DbSecurityGroup', {
       vpc,
-      description: 'Security group for RDS PostgreSQL',
+      description: 'Allow PostgreSQL access from Lambda and local dev',
     });
 
-    const lambdaSecurityGroup = new ec2.SecurityGroup(this, 'LambdaSecurityGroup', {
-      vpc,
-      description: 'Security group for Lambda functions',
-    });
-
+    // Allow connections from anywhere on port 5432
+    // (RDS credentials + SSL provide the real security layer)
     dbSecurityGroup.addIngressRule(
-      lambdaSecurityGroup,
+      ec2.Peer.anyIpv4(),
       ec2.Port.tcp(5432),
-      'Allow Lambda to connect to RDS'
+      'Allow PostgreSQL from Lambda and dev machines'
     );
 
-    // ─── RDS PostgreSQL ───────────────────────────────────────────────────────
+    // ─── RDS PostgreSQL (Free Tier) ───────────────────────────────────────────
     const database = new rds.DatabaseInstance(this, 'BookingsDb', {
       engine: rds.DatabaseInstanceEngine.postgres({
-        version: rds.PostgresEngineVersion.VER_16_3,
+        version: rds.PostgresEngineVersion.of('16.14', '16'),
       }),
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.MICRO),
       vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       securityGroups: [dbSecurityGroup],
+      publiclyAccessible: true,
       databaseName: 'bookings',
       credentials: rds.Credentials.fromGeneratedSecret('bookings_admin', {
         secretName: 'bookings-engine/db-credentials',
@@ -76,7 +69,7 @@ export class BookingsEngineStack extends cdk.Stack {
       multiAz: false,
       deletionProtection: false,
       removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
-      backupRetention: cdk.Duration.days(7),
+      backupRetention: cdk.Duration.days(1),
     });
 
     // ─── Cognito User Pool ────────────────────────────────────────────────────
@@ -107,46 +100,50 @@ export class BookingsEngineStack extends cdk.Stack {
       generateSecret: false,
     });
 
-    // ─── Lambda Functions ─────────────────────────────────────────────────────
-    const commonLambdaProps: Partial<lambda.FunctionProps> = {
+    // ─── Lambda Functions (outside VPC) ───────────────────────────────────────
+    const dbSecret = database.secret!;
+
+    const commonNodejsProps: Partial<nodejs.NodejsFunctionProps> = {
       runtime: lambda.Runtime.NODEJS_20_X,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
-      vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      securityGroups: [lambdaSecurityGroup],
       environment: {
         DB_HOST: database.dbInstanceEndpointAddress,
         DB_PORT: database.dbInstanceEndpointPort,
         DB_NAME: 'bookings',
         DB_USER: 'bookings_admin',
+        DB_SECRET_ARN: dbSecret.secretArn,
         DB_SSL: 'true',
         NODE_OPTIONS: '--enable-source-maps',
       },
+      bundling: {
+        minify: true,
+        sourceMap: true,
+        target: 'node20',
+        format: nodejs.OutputFormat.CJS,
+        externalModules: [], // Bundle everything
+      },
     };
 
-    // Grant Lambda access to the DB secret for password retrieval
-    const dbSecret = database.secret!;
-
-    const createLambda = (name: string, handlerPath: string): lambda.Function => {
-      const fn = new lambda.Function(this, name, {
-        ...commonLambdaProps,
+    const createLambda = (name: string, entry: string): nodejs.NodejsFunction => {
+      const fn = new nodejs.NodejsFunction(this, name, {
+        ...commonNodejsProps,
         functionName: `bookings-${name.toLowerCase()}`,
-        handler: handlerPath,
-        code: lambda.Code.fromAsset('../dist'),
-      } as lambda.FunctionProps);
+        entry: `../src/handlers/${entry}`,
+        handler: 'handler',
+      } as nodejs.NodejsFunctionProps);
 
       dbSecret.grantRead(fn);
       return fn;
     };
 
-    const tenantFn = createLambda('Tenant', 'handlers/tenant.handler.handler');
-    const resourceTypesFn = createLambda('ResourceTypes', 'handlers/resource-types.handler.handler');
-    const resourcesFn = createLambda('Resources', 'handlers/resources.handler.handler');
-    const servicesFn = createLambda('Services', 'handlers/services.handler.handler');
-    const availabilityFn = createLambda('Availability', 'handlers/availability.handler.handler');
-    const customersFn = createLambda('Customers', 'handlers/customers.handler.handler');
-    const bookingsFn = createLambda('Bookings', 'handlers/bookings.handler.handler');
+    const tenantFn = createLambda('Tenant', 'tenant.handler.ts');
+    const resourceTypesFn = createLambda('ResourceTypes', 'resource-types.handler.ts');
+    const resourcesFn = createLambda('Resources', 'resources.handler.ts');
+    const servicesFn = createLambda('Services', 'services.handler.ts');
+    const availabilityFn = createLambda('Availability', 'availability.handler.ts');
+    const customersFn = createLambda('Customers', 'customers.handler.ts');
+    const bookingsFn = createLambda('Bookings', 'bookings.handler.ts');
 
     // ─── API Gateway ──────────────────────────────────────────────────────────
     const httpApi = new apigatewayv2.HttpApi(this, 'BookingsApi', {
@@ -164,9 +161,11 @@ export class BookingsEngineStack extends cdk.Stack {
       },
     });
 
-    const jwtAuthorizer = new authorizers.HttpJwtAuthorizer('CognitoAuthorizer', `https://cognito-idp.${this.region}.amazonaws.com/${userPool.userPoolId}`, {
-      jwtAudience: [userPoolClient.userPoolClientId],
-    });
+    const jwtAuthorizer = new authorizers.HttpJwtAuthorizer(
+      'CognitoAuthorizer',
+      `https://cognito-idp.${this.region}.amazonaws.com/${userPool.userPoolId}`,
+      { jwtAudience: [userPoolClient.userPoolClientId] }
+    );
 
     // Helper to add routes
     const addRoute = (
@@ -177,7 +176,7 @@ export class BookingsEngineStack extends cdk.Stack {
       httpApi.addRoutes({
         path: `/v1${path}`,
         methods: [method],
-        integration: new integrations.HttpLambdaIntegration(`${method}${path}`, fn),
+        integration: new integrations.HttpLambdaIntegration(`${method}${path.replace(/[\/{}]/g, '-')}`, fn),
         authorizer: jwtAuthorizer,
       });
     };
@@ -250,6 +249,11 @@ export class BookingsEngineStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'DatabaseEndpoint', {
       value: database.dbInstanceEndpointAddress,
       description: 'RDS PostgreSQL endpoint',
+    });
+
+    new cdk.CfnOutput(this, 'DatabaseSecretArn', {
+      value: dbSecret.secretArn,
+      description: 'ARN of the secret containing DB credentials',
     });
   }
 }

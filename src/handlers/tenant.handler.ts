@@ -6,6 +6,7 @@
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { getRequestContext, requireAdmin } from '../utils/auth';
+import { normalizeEvent } from '../utils/event';
 import { success, error } from '../utils/response';
 import { getTenantById, updateTenant } from '../repositories/tenant.repository';
 import { updateTenantSchema } from '../models/validation';
@@ -14,15 +15,16 @@ import { ValidationError } from '../utils/errors';
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   try {
     const context = getRequestContext(event);
+    const { method } = normalizeEvent(event);
 
-    switch (event.httpMethod) {
+    switch (method) {
       case 'GET':
         return handleGet(context.tenant_id);
       case 'PATCH':
         requireAdmin(context);
         return handlePatch(context.tenant_id, event.body);
       default:
-        return error(new ValidationError(`Unsupported method: ${event.httpMethod}`));
+        return error(new ValidationError(`Unsupported method: ${method}`));
     }
   } catch (err) {
     return error(err);
@@ -42,6 +44,6 @@ async function handlePatch(tenantId: string, body: string | null): Promise<APIGa
     throw new ValidationError('Invalid request body', { issues: parsed.error.issues });
   }
 
-  const tenant = await updateTenant(tenantId, parsed.data);
+  const tenant = await updateTenant(tenantId, parsed.data as any);
   return success(tenant);
 }

@@ -8,6 +8,7 @@
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { getRequestContext, requireAdmin } from '../utils/auth';
+import { normalizeEvent } from '../utils/event';
 import { success, created, noContent, error } from '../utils/response';
 import {
   listResourceTypes,
@@ -22,27 +23,27 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
   try {
     const context = getRequestContext(event);
     const id = event.pathParameters?.id;
-    const path = event.resource;
+    const { method, route } = normalizeEvent(event);
 
-    if (path === '/resource-types' && event.httpMethod === 'GET') {
+    if (route === '/resource-types' && method === 'GET') {
       const types = await listResourceTypes(context.tenant_id);
       return success({ data: types });
     }
-    if (path === '/resource-types' && event.httpMethod === 'POST') {
+    if (route === '/resource-types' && method === 'POST') {
       requireAdmin(context);
       return handleCreate(context.tenant_id, event.body);
     }
-    if (path === '/resource-types/{id}' && event.httpMethod === 'PATCH') {
+    if (route === '/resource-types/{id}' && method === 'PATCH') {
       requireAdmin(context);
       return handleUpdate(context.tenant_id, id!, event.body);
     }
-    if (path === '/resource-types/{id}' && event.httpMethod === 'DELETE') {
+    if (route === '/resource-types/{id}' && method === 'DELETE') {
       requireAdmin(context);
       await deleteResourceType(context.tenant_id, id!);
       return noContent();
     }
 
-    return error(new ValidationError(`Unsupported route: ${event.httpMethod} ${path}`));
+    return error(new ValidationError(`Unsupported route: ${method} ${route}`));
   } catch (err) {
     return error(err);
   }

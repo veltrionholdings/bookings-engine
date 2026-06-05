@@ -11,6 +11,7 @@
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { getRequestContext, requireAdmin } from '../utils/auth';
+import { normalizeEvent } from '../utils/event';
 import { success, created, error } from '../utils/response';
 import {
   listBookings,
@@ -33,35 +34,35 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
   try {
     const context = getRequestContext(event);
     const bookingId = event.pathParameters?.id;
-    const path = event.resource;
+    const { method, route } = normalizeEvent(event);
 
-    if (path === '/bookings' && event.httpMethod === 'GET') {
+    if (route === '/bookings' && method === 'GET') {
       return handleList(context.tenant_id, context.role, context.user_id, event.queryStringParameters);
     }
-    if (path === '/bookings' && event.httpMethod === 'POST') {
+    if (route === '/bookings' && method === 'POST') {
       return handleCreate(context.tenant_id, event.body);
     }
-    if (path === '/bookings/{id}' && event.httpMethod === 'GET') {
+    if (route === '/bookings/{id}' && method === 'GET') {
       return handleGet(context.tenant_id, bookingId!);
     }
-    if (path === '/bookings/{id}' && event.httpMethod === 'PATCH') {
+    if (route === '/bookings/{id}' && method === 'PATCH') {
       return handleUpdate(context.tenant_id, bookingId!, event.body);
     }
-    if (path === '/bookings/{id}/cancel' && event.httpMethod === 'POST') {
+    if (route === '/bookings/{id}/cancel' && method === 'POST') {
       return handleCancel(context.tenant_id, bookingId!, event.body, context.role === 'admin');
     }
-    if (path === '/bookings/{id}/complete' && event.httpMethod === 'POST') {
+    if (route === '/bookings/{id}/complete' && method === 'POST') {
       requireAdmin(context);
       const booking = await completeBooking(context.tenant_id, bookingId!);
       return success(booking);
     }
-    if (path === '/bookings/{id}/no-show' && event.httpMethod === 'POST') {
+    if (route === '/bookings/{id}/no-show' && method === 'POST') {
       requireAdmin(context);
       const booking = await markNoShow(context.tenant_id, bookingId!);
       return success(booking);
     }
 
-    return error(new ValidationError(`Unsupported route: ${event.httpMethod} ${path}`));
+    return error(new ValidationError(`Unsupported route: ${method} ${route}`));
   } catch (err) {
     return error(err);
   }
@@ -71,7 +72,7 @@ async function handleList(
   tenantId: string,
   role: string,
   userId: string,
-  params: Record<string, string> | null
+  params: Record<string, string | undefined> | null
 ): Promise<APIGatewayProxyResult> {
   const filters: Record<string, string | undefined> = {
     status: params?.status,

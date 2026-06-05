@@ -11,9 +11,14 @@ import { UnauthorizedError, ForbiddenError } from './errors';
  * Extract the request context (tenant, user, role) from the API Gateway event.
  * The JWT is verified by API Gateway/Cognito before reaching Lambda,
  * so we just need to read the claims.
+ *
+ * HTTP API (v2) puts claims at: event.requestContext.authorizer.jwt.claims
+ * REST API (v1) puts claims at: event.requestContext.authorizer.claims
  */
 export function getRequestContext(event: APIGatewayProxyEvent): RequestContext {
-  const claims = event.requestContext.authorizer?.claims;
+  // HTTP API v2 format
+  const authorizer = (event.requestContext as any).authorizer;
+  const claims = authorizer?.jwt?.claims || authorizer?.claims;
 
   if (!claims) {
     throw new UnauthorizedError('No authorization claims found');
