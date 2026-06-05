@@ -1,0 +1,1373 @@
+openapi: 3.0.3
+info:
+  title: Bookings Engine API
+  description: |
+    Generic multi-tenant booking API for service-based businesses.
+    Supports gyms, restaurants, salons, nail bars, and spas through
+    configurable business rules rather than business-specific code paths.
+  version: 1.0.0
+  contact:
+    name: Veltrion
+servers:
+  - url: https://api.bookings.example.com/v1
+    description: Production
+  - url: http://localhost:3000/v1
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Tenant
+    description: Tenant profile and configuration
+  - name: Resource Types
+    description: Categories of bookable resources
+  - name: Resources
+    description: Individual bookable entities (people, rooms, tables)
+  - name: Schedules
+    description: Resource availability schedules and overrides
+  - name: Services
+    description: Bookable procedures/activities
+  - name: Availability
+    description: Time slot availability queries
+  - name: Customers
+    description: End-user customer records
+  - name: Bookings
+    description: Booking lifecycle management
+
+paths:
+  # ─── Tenant ────────────────────────────────────────────────────────────────────
+  /tenant:
+    get:
+      tags: [Tenant]
+      summary: Get current tenant profile
+      operationId: getTenant
+      responses:
+        "200":
+          description: Tenant profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+    patch:
+      tags: [Tenant]
+      summary: Update tenant settings
+      operationId: updateTenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantUpdate"
+      responses:
+        "200":
+          description: Updated tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+
+  # ─── Resource Types ────────────────────────────────────────────────────────────
+  /resource-types:
+    get:
+      tags: [Resource Types]
+      summary: List resource types
+      operationId: listResourceTypes
+      responses:
+        "200":
+          description: List of resource types
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ResourceType"
+    post:
+      tags: [Resource Types]
+      summary: Create a resource type
+      operationId: createResourceType
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceTypeCreate"
+      responses:
+        "201":
+          description: Created resource type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceType"
+
+  /resource-types/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ResourceTypeId"
+    patch:
+      tags: [Resource Types]
+      summary: Update a resource type
+      operationId: updateResourceType
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceTypeUpdate"
+      responses:
+        "200":
+          description: Updated resource type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceType"
+    delete:
+      tags: [Resource Types]
+      summary: Delete a resource type
+      operationId: deleteResourceType
+      responses:
+        "204":
+          description: Deleted
+
+  # ─── Resources ─────────────────────────────────────────────────────────────────
+  /resources:
+    get:
+      tags: [Resources]
+      summary: List resources
+      operationId: listResources
+      parameters:
+        - name: resource_type_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: is_active
+          in: query
+          schema:
+            type: boolean
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Paginated list of resources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Resource"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+    post:
+      tags: [Resources]
+      summary: Create a resource
+      operationId: createResource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceCreate"
+      responses:
+        "201":
+          description: Created resource
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Resource"
+
+  /resources/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      tags: [Resources]
+      summary: Get a resource
+      operationId: getResource
+      responses:
+        "200":
+          description: Resource details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Resource"
+    patch:
+      tags: [Resources]
+      summary: Update a resource
+      operationId: updateResource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceUpdate"
+      responses:
+        "200":
+          description: Updated resource
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Resource"
+    delete:
+      tags: [Resources]
+      summary: Deactivate a resource
+      operationId: deleteResource
+      responses:
+        "204":
+          description: Deactivated
+
+  # ─── Resource Schedules ────────────────────────────────────────────────────────
+  /resources/{id}/schedules:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      tags: [Schedules]
+      summary: Get weekly schedule for a resource
+      operationId: getResourceSchedules
+      responses:
+        "200":
+          description: Weekly schedule entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ResourceSchedule"
+    put:
+      tags: [Schedules]
+      summary: Replace weekly schedule
+      operationId: setResourceSchedules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [schedules]
+              properties:
+                schedules:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/ResourceScheduleInput"
+      responses:
+        "200":
+          description: Updated schedule
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ResourceSchedule"
+
+  # ─── Schedule Overrides ────────────────────────────────────────────────────────
+  /resources/{id}/overrides:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      tags: [Schedules]
+      summary: List schedule overrides
+      operationId: listScheduleOverrides
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: List of overrides
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ScheduleOverride"
+    post:
+      tags: [Schedules]
+      summary: Create a schedule override
+      operationId: createScheduleOverride
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleOverrideCreate"
+      responses:
+        "201":
+          description: Created override
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleOverride"
+
+  /resources/{id}/overrides/{overrideId}:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+      - name: overrideId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      tags: [Schedules]
+      summary: Delete a schedule override
+      operationId: deleteScheduleOverride
+      responses:
+        "204":
+          description: Deleted
+
+  # ─── Services ──────────────────────────────────────────────────────────────────
+  /services:
+    get:
+      tags: [Services]
+      summary: List services
+      operationId: listServices
+      parameters:
+        - name: resource_type_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: is_active
+          in: query
+          schema:
+            type: boolean
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Paginated list of services
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Service"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+    post:
+      tags: [Services]
+      summary: Create a service
+      operationId: createService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceCreate"
+      responses:
+        "201":
+          description: Created service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+
+  /services/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ServiceId"
+    get:
+      tags: [Services]
+      summary: Get a service
+      operationId: getService
+      responses:
+        "200":
+          description: Service details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+    patch:
+      tags: [Services]
+      summary: Update a service
+      operationId: updateService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceUpdate"
+      responses:
+        "200":
+          description: Updated service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+    delete:
+      tags: [Services]
+      summary: Deactivate a service
+      operationId: deleteService
+      responses:
+        "204":
+          description: Deactivated
+
+  # ─── Resource-Service Links ────────────────────────────────────────────────────
+  /resources/{id}/services:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      tags: [Services]
+      summary: List services a resource can perform
+      operationId: getResourceServices
+      responses:
+        "200":
+          description: Linked services
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Service"
+    put:
+      tags: [Services]
+      summary: Set services for a resource
+      operationId: setResourceServices
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [service_ids]
+              properties:
+                service_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        "200":
+          description: Updated links
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Service"
+
+  # ─── Availability ──────────────────────────────────────────────────────────────
+  /availability:
+    get:
+      tags: [Availability]
+      summary: Check available time slots
+      operationId: getAvailability
+      parameters:
+        - name: service_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: date
+          in: query
+          required: true
+          description: Date in tenant's local timezone (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+        - name: resource_id
+          in: query
+          description: Specific resource (omit for "any available")
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Available slots
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvailabilityResponse"
+
+  # ─── Customers ─────────────────────────────────────────────────────────────────
+  /customers:
+    get:
+      tags: [Customers]
+      summary: List customers
+      operationId: listCustomers
+      parameters:
+        - name: search
+          in: query
+          description: Search by name, email, or phone
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Paginated list of customers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Customer"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+    post:
+      tags: [Customers]
+      summary: Create a customer
+      operationId: createCustomer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerCreate"
+      responses:
+        "201":
+          description: Created customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+
+  /customers/{id}:
+    parameters:
+      - $ref: "#/components/parameters/CustomerId"
+    get:
+      tags: [Customers]
+      summary: Get a customer
+      operationId: getCustomer
+      responses:
+        "200":
+          description: Customer details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+    patch:
+      tags: [Customers]
+      summary: Update a customer
+      operationId: updateCustomer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerUpdate"
+      responses:
+        "200":
+          description: Updated customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+
+  # ─── Bookings ──────────────────────────────────────────────────────────────────
+  /bookings:
+    get:
+      tags: [Bookings]
+      summary: List bookings
+      operationId: listBookings
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, confirmed, completed, cancelled, no_show]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: resource_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: customer_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Paginated list of bookings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Booking"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+    post:
+      tags: [Bookings]
+      summary: Create a booking
+      operationId: createBooking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingCreate"
+      responses:
+        "201":
+          description: Created booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "409":
+          description: Time slot no longer available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /bookings/{id}:
+    parameters:
+      - $ref: "#/components/parameters/BookingId"
+    get:
+      tags: [Bookings]
+      summary: Get a booking
+      operationId: getBooking
+      responses:
+        "200":
+          description: Booking details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+    patch:
+      tags: [Bookings]
+      summary: Update a booking
+      operationId: updateBooking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingUpdate"
+      responses:
+        "200":
+          description: Updated booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "409":
+          description: Conflict when rescheduling
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /bookings/{id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/BookingId"
+    post:
+      tags: [Bookings]
+      summary: Cancel a booking
+      operationId: cancelBooking
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Cancelled booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "403":
+          description: Cancellation window expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /bookings/{id}/complete:
+    parameters:
+      - $ref: "#/components/parameters/BookingId"
+    post:
+      tags: [Bookings]
+      summary: Mark booking as completed
+      operationId: completeBooking
+      responses:
+        "200":
+          description: Completed booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+
+  /bookings/{id}/no-show:
+    parameters:
+      - $ref: "#/components/parameters/BookingId"
+    post:
+      tags: [Bookings]
+      summary: Mark booking as no-show
+      operationId: noShowBooking
+      responses:
+        "200":
+          description: No-show booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ResourceTypeId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ResourceId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ServiceId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CustomerId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    BookingId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+
+  schemas:
+    # ─── Common ────────────────────────────────────────────────────────────────
+    Pagination:
+      type: object
+      properties:
+        next_cursor:
+          type: string
+          nullable: true
+        has_more:
+          type: boolean
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [VALIDATION_ERROR, NOT_FOUND, CONFLICT, FORBIDDEN, UNAUTHORIZED]
+            message:
+              type: string
+            details:
+              type: object
+
+    # ─── Tenant ────────────────────────────────────────────────────────────────
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        business_type:
+          type: string
+          enum: [gym, restaurant, salon, nail_bar, spa]
+        timezone:
+          type: string
+        settings:
+          $ref: "#/components/schemas/TenantSettings"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TenantUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        timezone:
+          type: string
+        settings:
+          $ref: "#/components/schemas/TenantSettings"
+
+    TenantSettings:
+      type: object
+      properties:
+        booking:
+          type: object
+          properties:
+            default_status:
+              type: string
+              enum: [pending, confirmed]
+            allow_past_bookings:
+              type: boolean
+            min_advance_minutes:
+              type: integer
+            max_advance_days:
+              type: integer
+            cancellation_window_minutes:
+              type: integer
+            allow_customer_cancellation:
+              type: boolean
+            overbooking_allowed:
+              type: boolean
+        availability:
+          type: object
+          properties:
+            slot_interval_minutes:
+              type: integer
+            assignment_strategy:
+              type: string
+              enum: [first_available, round_robin, least_busy]
+        notifications:
+          type: object
+          properties:
+            send_confirmation:
+              type: boolean
+            send_reminder:
+              type: boolean
+            reminder_hours_before:
+              type: integer
+
+    # ─── Resource Types ────────────────────────────────────────────────────────
+    ResourceType:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    ResourceTypeCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    ResourceTypeUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    # ─── Resources ─────────────────────────────────────────────────────────────
+    Resource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        resource_type_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        is_active:
+          type: boolean
+        metadata:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ResourceCreate:
+      type: object
+      required: [resource_type_id, name]
+      properties:
+        resource_type_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        metadata:
+          type: object
+
+    ResourceUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        is_active:
+          type: boolean
+        metadata:
+          type: object
+
+    # ─── Schedules ─────────────────────────────────────────────────────────────
+    ResourceSchedule:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        day_of_week:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: "0 = Monday, 6 = Sunday"
+        start_time:
+          type: string
+          description: "HH:mm format"
+        end_time:
+          type: string
+          description: "HH:mm format"
+        is_active:
+          type: boolean
+
+    ResourceScheduleInput:
+      type: object
+      required: [day_of_week, start_time, end_time]
+      properties:
+        day_of_week:
+          type: integer
+          minimum: 0
+          maximum: 6
+        start_time:
+          type: string
+        end_time:
+          type: string
+
+    ScheduleOverride:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        override_date:
+          type: string
+          format: date
+        is_available:
+          type: boolean
+        start_time:
+          type: string
+          nullable: true
+        end_time:
+          type: string
+          nullable: true
+        reason:
+          type: string
+
+    ScheduleOverrideCreate:
+      type: object
+      required: [override_date, is_available]
+      properties:
+        override_date:
+          type: string
+          format: date
+        is_available:
+          type: boolean
+        start_time:
+          type: string
+        end_time:
+          type: string
+        reason:
+          type: string
+
+    # ─── Services ──────────────────────────────────────────────────────────────
+    Service:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        duration_minutes:
+          type: integer
+        buffer_minutes:
+          type: integer
+        capacity:
+          type: integer
+        resource_type_id:
+          type: string
+          format: uuid
+        price_cents:
+          type: integer
+        currency:
+          type: string
+        is_active:
+          type: boolean
+        metadata:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ServiceCreate:
+      type: object
+      required: [name, duration_minutes, resource_type_id]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        duration_minutes:
+          type: integer
+          minimum: 5
+        buffer_minutes:
+          type: integer
+          minimum: 0
+          default: 0
+        capacity:
+          type: integer
+          minimum: 1
+          default: 1
+        resource_type_id:
+          type: string
+          format: uuid
+        price_cents:
+          type: integer
+        currency:
+          type: string
+        metadata:
+          type: object
+
+    ServiceUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        duration_minutes:
+          type: integer
+          minimum: 5
+        buffer_minutes:
+          type: integer
+          minimum: 0
+        capacity:
+          type: integer
+          minimum: 1
+        price_cents:
+          type: integer
+        currency:
+          type: string
+        is_active:
+          type: boolean
+        metadata:
+          type: object
+
+    # ─── Availability ──────────────────────────────────────────────────────────
+    AvailabilityResponse:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        service:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            duration_minutes:
+              type: integer
+        resource:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+        slots:
+          type: array
+          items:
+            type: object
+            properties:
+              start_time:
+                type: string
+                description: "HH:mm in tenant local time"
+              end_time:
+                type: string
+                description: "HH:mm in tenant local time"
+              resources:
+                type: array
+                description: "Available resources for this slot (only when no specific resource requested)"
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    name:
+                      type: string
+
+    # ─── Customers ─────────────────────────────────────────────────────────────
+    Customer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        notes:
+          type: string
+        metadata:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CustomerCreate:
+      type: object
+      required: [first_name, last_name]
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        notes:
+          type: string
+        metadata:
+          type: object
+
+    CustomerUpdate:
+      type: object
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        notes:
+          type: string
+        metadata:
+          type: object
+
+    # ─── Bookings ──────────────────────────────────────────────────────────────
+    Booking:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, confirmed, completed, cancelled, no_show]
+        service:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+        resource:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+        customer:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            first_name:
+              type: string
+            last_name:
+              type: string
+        start_time:
+          type: string
+          format: date-time
+          description: UTC
+        start_time_local:
+          type: string
+          description: Tenant local time
+        end_time:
+          type: string
+          format: date-time
+          description: UTC
+        end_time_local:
+          type: string
+          description: Tenant local time
+        party_size:
+          type: integer
+        notes:
+          type: string
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+        cancellation_reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BookingCreate:
+      type: object
+      required: [service_id, customer_id, start_time]
+      properties:
+        service_id:
+          type: string
+          format: uuid
+        resource_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: "Omit or null for 'any available' assignment"
+        customer_id:
+          type: string
+          format: uuid
+        start_time:
+          type: string
+          description: "ISO 8601 datetime in tenant's local timezone"
+        party_size:
+          type: integer
+          minimum: 1
+          default: 1
+        notes:
+          type: string
+
+    BookingUpdate:
+      type: object
+      properties:
+        start_time:
+          type: string
+          description: "Reschedule: new start time in tenant's local timezone"
+        resource_id:
+          type: string
+          format: uuid
+          description: "Reassign to different resource"
+        notes:
+          type: string

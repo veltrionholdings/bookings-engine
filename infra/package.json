@@ -1,0 +1,19 @@
+{
+  "name": "bookings-engine-infra",
+  "version": "1.0.0",
+  "description": "CDK infrastructure for Bookings Engine",
+  "scripts": {
+    "build": "tsc",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy",
+    "diff": "cdk diff"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.150.0",
+    "constructs": "10.3.0"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5",
+    "ts-node": "10.9.2"
+  }
+}
