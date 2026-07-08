@@ -15,7 +15,7 @@
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { getRequestContext, requireAdmin } from '../utils/auth';
+import { getRequestContext, requireAdmin, getTenantIdFromEvent } from '../utils/auth';
 import { normalizeEvent } from '../utils/event';
 import { success, created, noContent, error } from '../utils/response';
 import {
@@ -45,21 +45,35 @@ import { Service } from '../models/types';
 
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   try {
-    const context = getRequestContext(event);
     const resourceId = event.pathParameters?.id;
     const overrideId = event.pathParameters?.overrideId;
     const { method, route } = normalizeEvent(event);
 
-    // Route based on path pattern and method
+    // Public read endpoints
     if (route === '/resources' && method === 'GET') {
-      return await handleList(context.tenant_id, event.queryStringParameters);
+      const tenantId = getTenantIdFromEvent(event);
+      return await handleList(tenantId, event.queryStringParameters);
     }
+    if (route === '/resources/{id}' && method === 'GET') {
+      const tenantId = getTenantIdFromEvent(event);
+      return await handleGet(tenantId, resourceId!);
+    }
+    if (route === '/resources/{id}/schedules' && method === 'GET') {
+      return await handleGetSchedules(resourceId!);
+    }
+    if (route === '/resources/{id}/overrides' && method === 'GET') {
+      return await handleListOverrides(resourceId!, event.queryStringParameters);
+    }
+    if (route === '/resources/{id}/services' && method === 'GET') {
+      const tenantId = getTenantIdFromEvent(event);
+      return await handleGetServices(tenantId, resourceId!);
+    }
+
+    // Authenticated write endpoints
+    const context = getRequestContext(event);
     if (route === '/resources' && method === 'POST') {
       requireAdmin(context);
       return await handleCreate(context.tenant_id, event.body);
-    }
-    if (route === '/resources/{id}' && method === 'GET') {
-      return await handleGet(context.tenant_id, resourceId!);
     }
     if (route === '/resources/{id}' && method === 'PATCH') {
       requireAdmin(context);
@@ -70,15 +84,9 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       await deactivateResource(context.tenant_id, resourceId!);
       return noContent();
     }
-    if (route === '/resources/{id}/schedules' && method === 'GET') {
-      return await handleGetSchedules(resourceId!);
-    }
     if (route === '/resources/{id}/schedules' && method === 'PUT') {
       requireAdmin(context);
       return await handleSetSchedules(resourceId!, event.body);
-    }
-    if (route === '/resources/{id}/overrides' && method === 'GET') {
-      return await handleListOverrides(resourceId!, event.queryStringParameters);
     }
     if (route === '/resources/{id}/overrides' && method === 'POST') {
       requireAdmin(context);
@@ -88,9 +96,6 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       requireAdmin(context);
       await deleteOverride(resourceId!, overrideId!);
       return noContent();
-    }
-    if (route === '/resources/{id}/services' && method === 'GET') {
-      return await handleGetServices(context.tenant_id, resourceId!);
     }
     if (route === '/resources/{id}/services' && method === 'PUT') {
       requireAdmin(context);

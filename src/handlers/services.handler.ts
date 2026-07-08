@@ -8,7 +8,7 @@
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { getRequestContext, requireAdmin } from '../utils/auth';
+import { getRequestContext, requireAdmin, getTenantIdFromEvent } from '../utils/auth';
 import { normalizeEvent } from '../utils/event';
 import { success, created, noContent, error } from '../utils/response';
 import {
@@ -23,19 +23,24 @@ import { ValidationError } from '../utils/errors';
 
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   try {
-    const context = getRequestContext(event);
     const serviceId = event.pathParameters?.id;
     const { method, route } = normalizeEvent(event);
 
+    // Public read endpoints
     if (route === '/services' && method === 'GET') {
-      return await handleList(context.tenant_id, event.queryStringParameters);
+      const tenantId = getTenantIdFromEvent(event);
+      return await handleList(tenantId, event.queryStringParameters);
     }
+    if (route === '/services/{id}' && method === 'GET') {
+      const tenantId = getTenantIdFromEvent(event);
+      return await handleGet(tenantId, serviceId!);
+    }
+
+    // Authenticated write endpoints
+    const context = getRequestContext(event);
     if (route === '/services' && method === 'POST') {
       requireAdmin(context);
       return await handleCreate(context.tenant_id, event.body);
-    }
-    if (route === '/services/{id}' && method === 'GET') {
-      return await handleGet(context.tenant_id, serviceId!);
     }
     if (route === '/services/{id}' && method === 'PATCH') {
       requireAdmin(context);

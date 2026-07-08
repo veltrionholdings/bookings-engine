@@ -99,6 +99,9 @@ export class BookingsEngineStack extends cdk.Stack {
         userSrp: true,
       },
       generateSecret: false,
+      idTokenValidity: cdk.Duration.hours(24),
+      accessTokenValidity: cdk.Duration.hours(24),
+      refreshTokenValidity: cdk.Duration.days(30),
     });
 
     // ─── Lambda Functions (outside VPC) ───────────────────────────────────────
@@ -170,7 +173,7 @@ export class BookingsEngineStack extends cdk.Stack {
       { jwtAudience: [userPoolClient.userPoolClientId] }
     );
 
-    // Helper to add routes
+    // Helper to add authenticated routes
     const addRoute = (
       method: apigatewayv2.HttpMethod,
       path: string,
@@ -184,6 +187,19 @@ export class BookingsEngineStack extends cdk.Stack {
       });
     };
 
+    // Helper to add public routes (no auth required)
+    const addPublicRoute = (
+      method: apigatewayv2.HttpMethod,
+      path: string,
+      fn: lambda.Function
+    ) => {
+      httpApi.addRoutes({
+        path: `/v1${path}`,
+        methods: [method],
+        integration: new integrations.HttpLambdaIntegration(`${method}${path.replace(/[\/{}]/g, '-')}-public`, fn),
+      });
+    };
+
     // Tenant routes
     addRoute(apigatewayv2.HttpMethod.GET, '/tenant', tenantFn);
     addRoute(apigatewayv2.HttpMethod.PATCH, '/tenant', tenantFn);
@@ -194,10 +210,10 @@ export class BookingsEngineStack extends cdk.Stack {
     addRoute(apigatewayv2.HttpMethod.PATCH, '/resource-types/{id}', resourceTypesFn);
     addRoute(apigatewayv2.HttpMethod.DELETE, '/resource-types/{id}', resourceTypesFn);
 
-    // Resource routes
-    addRoute(apigatewayv2.HttpMethod.GET, '/resources', resourcesFn);
+    // Resource routes (GET is public, write requires auth)
+    addPublicRoute(apigatewayv2.HttpMethod.GET, '/resources', resourcesFn);
     addRoute(apigatewayv2.HttpMethod.POST, '/resources', resourcesFn);
-    addRoute(apigatewayv2.HttpMethod.GET, '/resources/{id}', resourcesFn);
+    addPublicRoute(apigatewayv2.HttpMethod.GET, '/resources/{id}', resourcesFn);
     addRoute(apigatewayv2.HttpMethod.PATCH, '/resources/{id}', resourcesFn);
     addRoute(apigatewayv2.HttpMethod.DELETE, '/resources/{id}', resourcesFn);
     addRoute(apigatewayv2.HttpMethod.GET, '/resources/{id}/schedules', resourcesFn);
@@ -208,15 +224,15 @@ export class BookingsEngineStack extends cdk.Stack {
     addRoute(apigatewayv2.HttpMethod.GET, '/resources/{id}/services', resourcesFn);
     addRoute(apigatewayv2.HttpMethod.PUT, '/resources/{id}/services', resourcesFn);
 
-    // Service routes
-    addRoute(apigatewayv2.HttpMethod.GET, '/services', servicesFn);
+    // Service routes (GET is public, write requires auth)
+    addPublicRoute(apigatewayv2.HttpMethod.GET, '/services', servicesFn);
     addRoute(apigatewayv2.HttpMethod.POST, '/services', servicesFn);
-    addRoute(apigatewayv2.HttpMethod.GET, '/services/{id}', servicesFn);
+    addPublicRoute(apigatewayv2.HttpMethod.GET, '/services/{id}', servicesFn);
     addRoute(apigatewayv2.HttpMethod.PATCH, '/services/{id}', servicesFn);
     addRoute(apigatewayv2.HttpMethod.DELETE, '/services/{id}', servicesFn);
 
-    // Availability
-    addRoute(apigatewayv2.HttpMethod.GET, '/availability', availabilityFn);
+    // Availability (public — customers browse without auth)
+    addPublicRoute(apigatewayv2.HttpMethod.GET, '/availability', availabilityFn);
 
     // Customer routes
     addRoute(apigatewayv2.HttpMethod.GET, '/customers', customersFn);

@@ -4,7 +4,7 @@
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { getRequestContext } from '../utils/auth';
+import { getTenantIdFromEvent } from '../utils/auth';
 import { success, error } from '../utils/response';
 import { getAvailability } from '../services/availability.service';
 import { getAvailabilitySchema } from '../models/validation';
@@ -12,7 +12,7 @@ import { ValidationError } from '../utils/errors';
 
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   try {
-    const context = getRequestContext(event);
+    const tenantId = getTenantIdFromEvent(event);
     const params = event.queryStringParameters || {};
 
     const parsed = getAvailabilitySchema.safeParse({
@@ -26,7 +26,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     }
 
     const result = await getAvailability(
-      context.tenant_id,
+      tenantId,
       parsed.data.service_id,
       parsed.data.date,
       parsed.data.resource_id
