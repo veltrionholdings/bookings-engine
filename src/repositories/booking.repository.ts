@@ -236,3 +236,39 @@ export async function getBookingsForResource(
     [resourceId, dayEndUtc.toISOString(), dayStartUtc.toISOString()]
   );
 }
+
+/**
+ * Count confirmed/pending bookings per resource for a date range.
+ * Used by round_robin and least_busy assignment strategies.
+ */
+export async function getBookingCountsByResource(
+  resourceIds: string[],
+  startUtc: Date,
+  endUtc: Date
+): Promise<Map<string, number>> {
+  if (resourceIds.length === 0) return new Map();
+
+  const placeholders = resourceIds.map((_, i) => `$${i + 1}`).join(', ');
+  const params: unknown[] = [...resourceIds, startUtc.toISOString(), endUtc.toISOString()];
+
+  const rows = await queryMany<{ resource_id: string; count: string }>(
+    `SELECT resource_id, COUNT(*) as count
+     FROM bookings
+     WHERE resource_id IN (${placeholders})
+       AND status IN ('pending', 'confirmed')
+       AND start_time >= $${resourceIds.length + 1}
+       AND start_time < $${resourceIds.length + 2}
+     GROUP BY resource_id`,
+    params
+  );
+
+  const counts = new Map<string, number>();
+  for (const id of resourceIds) {
+    counts.set(id, 0);
+  }
+  for (const row of rows) {
+    counts.set(row.resource_id, parseInt(row.count, 10));
+  }
+
+  return counts;
+}

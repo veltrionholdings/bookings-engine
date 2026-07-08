@@ -7,7 +7,7 @@
     "build": "tsc",
     "dev": "ts-node-dev --respawn src/index.ts",
     "lint": "eslint src/ --ext .ts",
-    "test": "jest --run",
+    "test": "jest",
     "migrate": "ts-node src/utils/migrate.ts"
   },
   "dependencies": {

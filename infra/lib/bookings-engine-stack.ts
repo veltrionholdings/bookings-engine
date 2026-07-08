@@ -13,6 +13,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as authorizers from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
@@ -107,6 +108,7 @@ export class BookingsEngineStack extends cdk.Stack {
       runtime: lambda.Runtime.NODEJS_20_X,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
+      logRetention: logs.RetentionDays.ONE_WEEK,
       environment: {
         DB_HOST: database.dbInstanceEndpointAddress,
         DB_PORT: database.dbInstanceEndpointPort,
@@ -220,6 +222,8 @@ export class BookingsEngineStack extends cdk.Stack {
     addRoute(apigatewayv2.HttpMethod.POST, '/customers', customersFn);
     addRoute(apigatewayv2.HttpMethod.GET, '/customers/{id}', customersFn);
     addRoute(apigatewayv2.HttpMethod.PATCH, '/customers/{id}', customersFn);
+    addRoute(apigatewayv2.HttpMethod.DELETE, '/customers/{id}', customersFn);
+    addRoute(apigatewayv2.HttpMethod.GET, '/customers/{id}/export', customersFn);
 
     // Booking routes
     addRoute(apigatewayv2.HttpMethod.GET, '/bookings', bookingsFn);

@@ -1,20 +1,24 @@
 /**
  * Lambda handler for customer endpoints.
- * GET    /customers      — List customers (admin only, supports search)
- * POST   /customers      — Create a customer
- * GET    /customers/:id  — Get a customer
- * PATCH  /customers/:id  — Update a customer
+ * GET    /customers            — List customers (admin only, supports search)
+ * POST   /customers            — Create a customer
+ * GET    /customers/:id        — Get a customer
+ * PATCH  /customers/:id        — Update a customer
+ * DELETE /customers/:id        — Delete a customer (POPIA right to erasure)
+ * GET    /customers/:id/export — Export all customer data (POPIA right of access)
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { getRequestContext, requireAdmin } from '../utils/auth';
 import { normalizeEvent } from '../utils/event';
-import { success, created, error } from '../utils/response';
+import { success, created, noContent, error } from '../utils/response';
 import {
   listCustomers,
   getCustomerById,
   createCustomer,
   updateCustomer,
+  deleteCustomer,
+  exportCustomerData,
 } from '../repositories/customer.repository';
 import { createCustomerSchema, updateCustomerSchema } from '../models/validation';
 import { ValidationError } from '../utils/errors';
@@ -37,6 +41,14 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     }
     if (route === '/customers/{id}' && method === 'PATCH') {
       return handleUpdate(context.tenant_id, customerId!, event.body);
+    }
+    if (route === '/customers/{id}' && method === 'DELETE') {
+      requireAdmin(context);
+      await deleteCustomer(context.tenant_id, customerId!);
+      return noContent();
+    }
+    if (route === '/customers/{id}/export' && method === 'GET') {
+      return handleExport(context.tenant_id, customerId!);
     }
 
     return error(new ValidationError(`Unsupported route: ${method} ${route}`));
@@ -78,4 +90,9 @@ async function handleUpdate(tenantId: string, id: string, body: string | null): 
 
   const customer = await updateCustomer(tenantId, id, parsed.data);
   return success(customer);
+}
+
+async function handleExport(tenantId: string, id: string): Promise<APIGatewayProxyResult> {
+  const data = await exportCustomerData(tenantId, id);
+  return success(data);
 }

@@ -2,8 +2,8 @@
  * Customer data access layer.
  */
 
-import { queryOne, queryMany } from '../utils/db';
-import { Customer, PaginatedResult } from '../models/types';
+import { queryOne, queryMany, query } from '../utils/db';
+import { Customer, Booking, PaginatedResult } from '../models/types';
 import { NotFoundError } from '../utils/errors';
 
 export async function listCustomers(
@@ -125,4 +125,54 @@ export async function updateCustomer(
 
   if (!row) throw new NotFoundError('Customer', id);
   return row;
+}
+
+/**
+ * Delete a customer and anonymise their associated bookings (POPIA right to erasure).
+ * Bookings are not deleted — they are anonymised so the business retains operational records.
+ */
+export async function deleteCustomer(tenantId: string, id: string): Promise<void> {
+  // Verify customer exists
+  await getCustomerById(tenantId, id);
+
+  // Anonymise all bookings for this customer (replace customer reference with null notes)
+  await query(
+    `UPDATE bookings SET
+       customer_id = $1,
+       notes = '[Customer data deleted per POPIA request]'
+     WHERE customer_id = $1 AND tenant_id = $2`,
+    [id, tenantId]
+  );
+
+  // Delete the customer record
+  const result = await query(
+    'DELETE FROM customers WHERE id = $1 AND tenant_id = $2',
+    [id, tenantId]
+  );
+
+  if (result.rowCount === 0) {
+    throw new NotFoundError('Customer', id);
+  }
+}
+
+/**
+ * Export all data held about a customer (POPIA right of access).
+ * Returns the customer record plus all their bookings.
+ */
+export interface CustomerExport {
+  customer: Customer;
+  bookings: Booking[];
+}
+
+export async function exportCustomerData(tenantId: string, id: string): Promise<CustomerExport> {
+  const customer = await getCustomerById(tenantId, id);
+
+  const bookings = await queryMany<Booking>(
+    `SELECT * FROM bookings
+     WHERE customer_id = $1 AND tenant_id = $2
+     ORDER BY start_time DESC`,
+    [id, tenantId]
+  );
+
+  return { customer, bookings };
 }

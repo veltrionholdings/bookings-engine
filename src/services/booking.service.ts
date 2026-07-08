@@ -14,6 +14,7 @@ import {
   createBookingInTransaction,
   getBookingById,
   updateBookingStatus,
+  getBookingCountsByResource,
 } from '../repositories/booking.repository';
 import { getAvailability } from './availability.service';
 import { withTransaction } from '../utils/db';
@@ -201,19 +202,57 @@ async function assignResource(
     throw new ConflictError('No resources available at the requested time');
   }
 
+  // Only one resource available — no strategy needed
+  if (matchingSlot.resources.length === 1) {
+    return matchingSlot.resources[0].id;
+  }
+
   const strategy = tenant.settings.availability.assignment_strategy;
+  const resourceIds = matchingSlot.resources.map(r => r.id);
 
   switch (strategy) {
     case 'first_available':
-      // Just pick the first one
       return matchingSlot.resources[0].id;
 
-    case 'round_robin':
-    case 'least_busy':
-      // For now, default to first available.
-      // TODO: Implement round_robin and least_busy strategies
-      // (requires counting recent bookings per resource)
-      return matchingSlot.resources[0].id;
+    case 'round_robin': {
+      // Distribute evenly: pick the resource with the fewest bookings this week
+      const now = new Date();
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - now.getDay()); // Start of week (Sunday)
+      weekStart.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 7);
+
+      const counts = await getBookingCountsByResource(resourceIds, weekStart, weekEnd);
+      let minCount = Infinity;
+      let chosen = resourceIds[0];
+      for (const id of resourceIds) {
+        const count = counts.get(id) || 0;
+        if (count < minCount) {
+          minCount = count;
+          chosen = id;
+        }
+      }
+      return chosen;
+    }
+
+    case 'least_busy': {
+      // Pick the resource with the fewest bookings on the requested day
+      const dayStart = localToUtc(`${date}T00:00:00`, tenant.timezone);
+      const dayEnd = localToUtc(`${date}T23:59:59`, tenant.timezone);
+
+      const counts = await getBookingCountsByResource(resourceIds, dayStart, dayEnd);
+      let minCount = Infinity;
+      let chosen = resourceIds[0];
+      for (const id of resourceIds) {
+        const count = counts.get(id) || 0;
+        if (count < minCount) {
+          minCount = count;
+          chosen = id;
+        }
+      }
+      return chosen;
+    }
 
     default:
       return matchingSlot.resources[0].id;
