@@ -119,6 +119,8 @@ export class BookingsEngineStack extends cdk.Stack {
         DB_USER: 'bookings_admin',
         DB_SECRET_ARN: dbSecret.secretArn,
         DB_SSL: 'true',
+        SENDER_EMAIL: 'noreply@veltrion.co.za',
+        DEFAULT_TENANT_ID: 'da8e5df8-f070-4671-a176-590a76c574b2',
         NODE_OPTIONS: '--enable-source-maps',
       },
       bundling: {
@@ -150,6 +152,30 @@ export class BookingsEngineStack extends cdk.Stack {
     const availabilityFn = createLambda('Availability', 'availability.handler.ts');
     const customersFn = createLambda('Customers', 'customers.handler.ts');
     const bookingsFn = createLambda('Bookings', 'bookings.handler.ts');
+
+    // Bookings Lambda needs SES permission to send confirmation emails
+    bookingsFn.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: ['*'],
+    }));
+
+    const usersFn = createLambda('Users', 'users.handler.ts');
+
+    // Users Lambda needs Cognito admin permissions
+    usersFn.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+      actions: [
+        'cognito-idp:AdminCreateUser',
+        'cognito-idp:AdminUpdateUserAttributes',
+        'cognito-idp:AdminDisableUser',
+        'cognito-idp:AdminEnableUser',
+        'cognito-idp:AdminDeleteUser',
+        'cognito-idp:ListUsers',
+      ],
+      resources: [userPool.userPoolArn],
+    }));
+
+    // Add Cognito User Pool ID to the users Lambda environment
+    usersFn.addEnvironment('COGNITO_USER_POOL_ID', userPool.userPoolId);
 
     // ─── API Gateway ──────────────────────────────────────────────────────────
     const httpApi = new apigatewayv2.HttpApi(this, 'BookingsApi', {
@@ -250,6 +276,13 @@ export class BookingsEngineStack extends cdk.Stack {
     addRoute(apigatewayv2.HttpMethod.POST, '/bookings/{id}/cancel', bookingsFn);
     addRoute(apigatewayv2.HttpMethod.POST, '/bookings/{id}/complete', bookingsFn);
     addRoute(apigatewayv2.HttpMethod.POST, '/bookings/{id}/no-show', bookingsFn);
+
+    // User management routes (admin only)
+    addRoute(apigatewayv2.HttpMethod.GET, '/users', usersFn);
+    addRoute(apigatewayv2.HttpMethod.POST, '/users/invite', usersFn);
+    addRoute(apigatewayv2.HttpMethod.POST, '/users/{id}/suspend', usersFn);
+    addRoute(apigatewayv2.HttpMethod.POST, '/users/{id}/activate', usersFn);
+    addRoute(apigatewayv2.HttpMethod.DELETE, '/users/{id}', usersFn);
 
     // ─── Outputs ──────────────────────────────────────────────────────────────
     new cdk.CfnOutput(this, 'ApiUrl', {

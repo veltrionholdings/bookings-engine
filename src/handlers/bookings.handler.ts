@@ -29,6 +29,9 @@ import { getServiceById } from '../repositories/service.repository';
 import { createBookingSchema, updateBookingSchema, cancelBookingSchema } from '../models/validation';
 import { ValidationError } from '../utils/errors';
 import { localToUtc, addMinutesToDate, utcToLocal } from '../utils/time';
+import { sendBookingConfirmationEmail } from '../services/email.service';
+import { getCustomerById } from '../repositories/customer.repository';
+import { getResourceById } from '../repositories/resource.repository';
 
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   try {
@@ -111,11 +114,49 @@ async function handleCreate(tenantId: string, body: string | null): Promise<APIG
 
   // Enrich response with local times
   const tenant = await getTenantById(tenantId);
+  const startLocal = utcToLocal(new Date(booking.start_time), tenant.timezone);
+  const endLocal = utcToLocal(new Date(booking.end_time), tenant.timezone);
+
   const enriched = {
     ...booking,
-    start_time_local: utcToLocal(new Date(booking.start_time), tenant.timezone),
-    end_time_local: utcToLocal(new Date(booking.end_time), tenant.timezone),
+    start_time_local: startLocal,
+    end_time_local: endLocal,
   };
+
+  // Send confirmation email (fire-and-forget — don't block response)
+  try {
+    const customer = await getCustomerById(tenantId, booking.customer_id);
+    const service = await getServiceById(tenantId, booking.service_id);
+    const resource = booking.resource_id
+      ? await getResourceById(tenantId, booking.resource_id)
+      : null;
+
+    const bookingDate = new Date(startLocal);
+    const dateFormatted = bookingDate.toLocaleDateString('en-ZA', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    const startTime = startLocal.split('T')[1]?.substring(0, 5) || '';
+    const endTime = endLocal.split('T')[1]?.substring(0, 5) || '';
+
+    if (customer.email) {
+      sendBookingConfirmationEmail({
+        customerEmail: customer.email,
+        customerName: `${customer.first_name} ${customer.last_name}`,
+        serviceName: service.name,
+        date: dateFormatted,
+        time: `${startTime} – ${endTime}`,
+        stylistName: resource?.name || 'Any Available',
+        businessName: tenant.name,
+        businessAddress: '271/206 Block IA, Soshanguve',
+        businessPhone: '078 878 2527',
+      });
+    }
+  } catch (emailErr) {
+    console.error('Email send preparation failed:', emailErr);
+  }
 
   return created(enriched);
 }
