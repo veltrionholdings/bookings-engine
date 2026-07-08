@@ -31,11 +31,11 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     }
     if (route === '/resource-types' && method === 'POST') {
       requireAdmin(context);
-      return handleCreate(context.tenant_id, event.body);
+      return await handleCreate(context.tenant_id, event.body);
     }
     if (route === '/resource-types/{id}' && method === 'PATCH') {
       requireAdmin(context);
-      return handleUpdate(context.tenant_id, id!, event.body);
+      return await handleUpdate(context.tenant_id, id!, event.body);
     }
     if (route === '/resource-types/{id}' && method === 'DELETE') {
       requireAdmin(context);

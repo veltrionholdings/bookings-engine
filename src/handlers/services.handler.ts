@@ -28,18 +28,18 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const { method, route } = normalizeEvent(event);
 
     if (route === '/services' && method === 'GET') {
-      return handleList(context.tenant_id, event.queryStringParameters);
+      return await handleList(context.tenant_id, event.queryStringParameters);
     }
     if (route === '/services' && method === 'POST') {
       requireAdmin(context);
-      return handleCreate(context.tenant_id, event.body);
+      return await handleCreate(context.tenant_id, event.body);
     }
     if (route === '/services/{id}' && method === 'GET') {
-      return handleGet(context.tenant_id, serviceId!);
+      return await handleGet(context.tenant_id, serviceId!);
     }
     if (route === '/services/{id}' && method === 'PATCH') {
       requireAdmin(context);
-      return handleUpdate(context.tenant_id, serviceId!, event.body);
+      return await handleUpdate(context.tenant_id, serviceId!, event.body);
     }
     if (route === '/services/{id}' && method === 'DELETE') {
       requireAdmin(context);

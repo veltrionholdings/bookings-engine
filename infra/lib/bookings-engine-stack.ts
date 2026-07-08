@@ -123,6 +123,7 @@ export class BookingsEngineStack extends cdk.Stack {
         sourceMap: true,
         target: 'node20',
         format: nodejs.OutputFormat.CJS,
+        keepNames: true,
         externalModules: [], // Bundle everything
       },
     };

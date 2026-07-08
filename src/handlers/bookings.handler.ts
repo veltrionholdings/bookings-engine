@@ -37,19 +37,19 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const { method, route } = normalizeEvent(event);
 
     if (route === '/bookings' && method === 'GET') {
-      return handleList(context.tenant_id, context.role, context.user_id, event.queryStringParameters);
+      return await handleList(context.tenant_id, context.role, context.user_id, event.queryStringParameters);
     }
     if (route === '/bookings' && method === 'POST') {
-      return handleCreate(context.tenant_id, event.body);
+      return await handleCreate(context.tenant_id, event.body);
     }
     if (route === '/bookings/{id}' && method === 'GET') {
-      return handleGet(context.tenant_id, bookingId!);
+      return await handleGet(context.tenant_id, bookingId!);
     }
     if (route === '/bookings/{id}' && method === 'PATCH') {
-      return handleUpdate(context.tenant_id, bookingId!, event.body);
+      return await handleUpdate(context.tenant_id, bookingId!, event.body);
     }
     if (route === '/bookings/{id}/cancel' && method === 'POST') {
-      return handleCancel(context.tenant_id, bookingId!, event.body, context.role === 'admin');
+      return await handleCancel(context.tenant_id, bookingId!, event.body, context.role === 'admin');
     }
     if (route === '/bookings/{id}/complete' && method === 'POST') {
       requireAdmin(context);

@@ -31,16 +31,16 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     if (route === '/customers' && method === 'GET') {
       requireAdmin(context);
-      return handleList(context.tenant_id, event.queryStringParameters);
+      return await handleList(context.tenant_id, event.queryStringParameters);
     }
     if (route === '/customers' && method === 'POST') {
-      return handleCreate(context.tenant_id, event.body);
+      return await handleCreate(context.tenant_id, event.body);
     }
     if (route === '/customers/{id}' && method === 'GET') {
-      return handleGet(context.tenant_id, customerId!);
+      return await handleGet(context.tenant_id, customerId!);
     }
     if (route === '/customers/{id}' && method === 'PATCH') {
-      return handleUpdate(context.tenant_id, customerId!, event.body);
+      return await handleUpdate(context.tenant_id, customerId!, event.body);
     }
     if (route === '/customers/{id}' && method === 'DELETE') {
       requireAdmin(context);
@@ -48,7 +48,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return noContent();
     }
     if (route === '/customers/{id}/export' && method === 'GET') {
-      return handleExport(context.tenant_id, customerId!);
+      return await handleExport(context.tenant_id, customerId!);
     }
 
     return error(new ValidationError(`Unsupported route: ${method} ${route}`));

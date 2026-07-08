@@ -19,10 +19,10 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     switch (method) {
       case 'GET':
-        return handleGet(context.tenant_id);
+        return await handleGet(context.tenant_id);
       case 'PATCH':
         requireAdmin(context);
-        return handlePatch(context.tenant_id, event.body);
+        return await handlePatch(context.tenant_id, event.body);
       default:
         return error(new ValidationError(`Unsupported method: ${method}`));
     }

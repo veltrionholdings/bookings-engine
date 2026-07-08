@@ -52,18 +52,18 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     // Route based on path pattern and method
     if (route === '/resources' && method === 'GET') {
-      return handleList(context.tenant_id, event.queryStringParameters);
+      return await handleList(context.tenant_id, event.queryStringParameters);
     }
     if (route === '/resources' && method === 'POST') {
       requireAdmin(context);
-      return handleCreate(context.tenant_id, event.body);
+      return await handleCreate(context.tenant_id, event.body);
     }
     if (route === '/resources/{id}' && method === 'GET') {
-      return handleGet(context.tenant_id, resourceId!);
+      return await handleGet(context.tenant_id, resourceId!);
     }
     if (route === '/resources/{id}' && method === 'PATCH') {
       requireAdmin(context);
-      return handleUpdate(context.tenant_id, resourceId!, event.body);
+      return await handleUpdate(context.tenant_id, resourceId!, event.body);
     }
     if (route === '/resources/{id}' && method === 'DELETE') {
       requireAdmin(context);
@@ -71,18 +71,18 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return noContent();
     }
     if (route === '/resources/{id}/schedules' && method === 'GET') {
-      return handleGetSchedules(resourceId!);
+      return await handleGetSchedules(resourceId!);
     }
     if (route === '/resources/{id}/schedules' && method === 'PUT') {
       requireAdmin(context);
-      return handleSetSchedules(resourceId!, event.body);
+      return await handleSetSchedules(resourceId!, event.body);
     }
     if (route === '/resources/{id}/overrides' && method === 'GET') {
-      return handleListOverrides(resourceId!, event.queryStringParameters);
+      return await handleListOverrides(resourceId!, event.queryStringParameters);
     }
     if (route === '/resources/{id}/overrides' && method === 'POST') {
       requireAdmin(context);
-      return handleCreateOverride(resourceId!, event.body);
+      return await handleCreateOverride(resourceId!, event.body);
     }
     if (route === '/resources/{id}/overrides/{overrideId}' && method === 'DELETE') {
       requireAdmin(context);
@@ -90,11 +90,11 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return noContent();
     }
     if (route === '/resources/{id}/services' && method === 'GET') {
-      return handleGetServices(context.tenant_id, resourceId!);
+      return await handleGetServices(context.tenant_id, resourceId!);
     }
     if (route === '/resources/{id}/services' && method === 'PUT') {
       requireAdmin(context);
-      return handleSetServices(context.tenant_id, resourceId!, event.body);
+      return await handleSetServices(context.tenant_id, resourceId!, event.body);
     }
 
     return error(new ValidationError(`Unsupported route: ${method} ${route}`));

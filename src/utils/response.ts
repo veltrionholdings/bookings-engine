@@ -43,17 +43,26 @@ export function noContent(): APIGatewayProxyResult {
 
 /**
  * Return an error response. Handles both AppError and unexpected errors.
+ * Uses duck-typing instead of instanceof to survive esbuild minification.
  */
 export function error(err: unknown): APIGatewayProxyResult {
-  if (err instanceof AppError) {
+  // Check if it's an AppError by shape (survives minification unlike instanceof)
+  if (
+    err &&
+    typeof err === 'object' &&
+    'code' in err &&
+    'statusCode' in err &&
+    'message' in err
+  ) {
+    const appErr = err as AppError;
     return {
-      statusCode: err.statusCode,
+      statusCode: appErr.statusCode,
       headers: CORS_HEADERS,
       body: JSON.stringify({
         error: {
-          code: err.code,
-          message: err.message,
-          ...(err.details && { details: err.details }),
+          code: appErr.code,
+          message: appErr.message,
+          ...(appErr.details && { details: appErr.details }),
         },
       }),
     };
