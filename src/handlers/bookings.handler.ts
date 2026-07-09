@@ -94,7 +94,48 @@ async function handleList(
   const cursor = params?.cursor;
 
   const result = await listBookings(tenantId, filters, limit, cursor);
-  return success(result);
+
+  // Enrich bookings with service, customer, and resource names
+  const tenant = await getTenantById(tenantId);
+  const enrichedData = await Promise.all(
+    result.data.map(async (booking) => {
+      let serviceName = 'Unknown Service';
+      let customerName = 'Unknown Customer';
+      let customerPhone = '';
+      let customerEmail = '';
+      let resourceName = '';
+
+      try {
+        const service = await getServiceById(tenantId, booking.service_id);
+        serviceName = service.name;
+      } catch { /* ignore */ }
+
+      try {
+        const customer = await getCustomerById(tenantId, booking.customer_id);
+        customerName = `${customer.first_name} ${customer.last_name}`;
+        customerPhone = customer.phone || '';
+        customerEmail = customer.email || '';
+      } catch { /* ignore */ }
+
+      if (booking.resource_id) {
+        try {
+          const resource = await getResourceById(tenantId, booking.resource_id);
+          resourceName = resource.name;
+        } catch { /* ignore */ }
+      }
+
+      return {
+        ...booking,
+        service: { id: booking.service_id, name: serviceName },
+        customer: { id: booking.customer_id, first_name: customerName.split(' ')[0], last_name: customerName.split(' ').slice(1).join(' '), phone: customerPhone, email: customerEmail },
+        resource: booking.resource_id ? { id: booking.resource_id, name: resourceName } : null,
+        start_time_local: utcToLocal(new Date(booking.start_time), tenant.timezone),
+        end_time_local: utcToLocal(new Date(booking.end_time), tenant.timezone),
+      };
+    })
+  );
+
+  return success({ data: enrichedData, pagination: result.pagination });
 }
 
 async function handleCreate(tenantId: string, body: string | null): Promise<APIGatewayProxyResult> {
