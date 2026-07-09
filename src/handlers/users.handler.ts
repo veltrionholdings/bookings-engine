@@ -55,6 +55,9 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (route === '/users/{id}/activate' && method === 'POST') {
       return await handleActivate(userId!);
     }
+    if (route === '/users/{id}/link-resource' && method === 'POST') {
+      return await handleLinkResource(userId!, event.body);
+    }
     if (route === '/users/{id}' && method === 'DELETE') {
       return await handleDelete(userId!);
     }
@@ -161,4 +164,24 @@ async function handleDelete(username: string): Promise<APIGatewayProxyResult> {
   }));
 
   return noContent();
+}
+
+/**
+ * Link a user to a resource (mark them as bookable).
+ * Stores the resource_id as a custom attribute on the Cognito user.
+ */
+async function handleLinkResource(username: string, body: string | null): Promise<APIGatewayProxyResult> {
+  if (!body) throw new ValidationError('Request body is required');
+  const { resource_id } = JSON.parse(body);
+  if (!resource_id) throw new ValidationError('resource_id is required');
+
+  await cognitoClient.send(new AdminUpdateUserAttributesCommand({
+    UserPoolId: USER_POOL_ID,
+    Username: username,
+    UserAttributes: [
+      { Name: 'custom:resource_id', Value: resource_id },
+    ],
+  }));
+
+  return success({ message: `User ${username} linked to resource ${resource_id}` });
 }

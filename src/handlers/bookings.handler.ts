@@ -29,7 +29,7 @@ import { getServiceById } from '../repositories/service.repository';
 import { createBookingSchema, updateBookingSchema, cancelBookingSchema } from '../models/validation';
 import { ValidationError } from '../utils/errors';
 import { localToUtc, addMinutesToDate, utcToLocal } from '../utils/time';
-import { sendBookingConfirmationEmail } from '../services/email.service';
+import { sendBookingConfirmationEmail, sendBookingCancellationEmail, sendBookingRescheduleEmail } from '../services/email.service';
 import { getCustomerById } from '../repositories/customer.repository';
 import { getResourceById } from '../repositories/resource.repository';
 
@@ -220,12 +220,14 @@ async function handleUpdate(tenantId: string, id: string, body: string | null): 
   const parsed = updateBookingSchema.safeParse(JSON.parse(body));
   if (!parsed.success) throw new ValidationError('Invalid request body', { issues: parsed.error.issues });
 
+  // Get existing booking for comparison (needed for reschedule email)
+  const existingBooking = await getBookingById(tenantId, id);
+  const tenant = await getTenantById(tenantId);
   const updateData: Record<string, unknown> = {};
+  let isReschedule = false;
 
   if (parsed.data.start_time) {
-    // Rescheduling — recalculate end times
-    const tenant = await getTenantById(tenantId);
-    const existingBooking = await getBookingById(tenantId, id);
+    isReschedule = true;
     const service = await getServiceById(tenantId, existingBooking.service_id);
 
     const newStartUtc = localToUtc(parsed.data.start_time, tenant.timezone);
@@ -246,12 +248,47 @@ async function handleUpdate(tenantId: string, id: string, body: string | null): 
 
   const booking = await updateBooking(tenantId, id, updateData as any);
 
-  const tenant = await getTenantById(tenantId);
   const enriched = {
     ...booking,
     start_time_local: utcToLocal(new Date(booking.start_time), tenant.timezone),
     end_time_local: utcToLocal(new Date(booking.end_time), tenant.timezone),
   };
+
+  // Send reschedule email if time changed (fire-and-forget)
+  if (isReschedule) {
+    try {
+      const customer = await getCustomerById(tenantId, existingBooking.customer_id);
+      const service = await getServiceById(tenantId, existingBooking.service_id);
+      const resource = booking.resource_id ? await getResourceById(tenantId, booking.resource_id) : null;
+
+      const oldStartLocal = utcToLocal(new Date(existingBooking.start_time), tenant.timezone);
+      const oldEndLocal = utcToLocal(new Date(existingBooking.end_time), tenant.timezone);
+      const newStartLocal = enriched.start_time_local;
+      const newEndLocal = enriched.end_time_local;
+
+      const oldDate = new Date(oldStartLocal).toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long' });
+      const oldTime = `${oldStartLocal.split('T')[1]?.substring(0, 5)} – ${oldEndLocal.split('T')[1]?.substring(0, 5)}`;
+      const newDate = new Date(newStartLocal).toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long' });
+      const newTime = `${newStartLocal.split('T')[1]?.substring(0, 5)} – ${newEndLocal.split('T')[1]?.substring(0, 5)}`;
+
+      if (customer.email) {
+        sendBookingRescheduleEmail({
+          customerEmail: customer.email,
+          customerName: `${customer.first_name} ${customer.last_name}`,
+          serviceName: service.name,
+          oldDate,
+          oldTime,
+          newDate,
+          newTime,
+          stylistName: resource?.name || 'Any Available',
+          businessName: tenant.name,
+          businessPhone: '078 878 2527',
+        });
+      }
+    } catch (emailErr) {
+      console.error('Reschedule email failed:', emailErr);
+    }
+  }
 
   return success(enriched);
 }
@@ -269,6 +306,38 @@ async function handleCancel(
     reason = parsed.data.reason;
   }
 
+  // Get booking details before cancellation for the email
+  const existingBooking = await getBookingById(tenantId, id);
   const booking = await cancelBooking(tenantId, id, reason, isAdmin);
+
+  // Send cancellation email (fire-and-forget)
+  try {
+    const tenant = await getTenantById(tenantId);
+    const customer = await getCustomerById(tenantId, existingBooking.customer_id);
+    const service = await getServiceById(tenantId, existingBooking.service_id);
+    const startLocal = utcToLocal(new Date(existingBooking.start_time), tenant.timezone);
+    const endLocal = utcToLocal(new Date(existingBooking.end_time), tenant.timezone);
+
+    const bookingDate = new Date(startLocal);
+    const dateFormatted = bookingDate.toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const startTime = startLocal.split('T')[1]?.substring(0, 5) || '';
+    const endTime = endLocal.split('T')[1]?.substring(0, 5) || '';
+
+    if (customer.email) {
+      sendBookingCancellationEmail({
+        customerEmail: customer.email,
+        customerName: `${customer.first_name} ${customer.last_name}`,
+        serviceName: service.name,
+        date: dateFormatted,
+        time: `${startTime} – ${endTime}`,
+        businessName: tenant.name,
+        businessPhone: '078 878 2527',
+        cancelledBy: isAdmin ? 'admin' : 'customer',
+      });
+    }
+  } catch (emailErr) {
+    console.error('Cancellation email failed:', emailErr);
+  }
+
   return success(booking);
 }

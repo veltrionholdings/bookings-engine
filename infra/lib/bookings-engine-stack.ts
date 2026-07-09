@@ -89,6 +89,7 @@ export class BookingsEngineStack extends cdk.Stack {
       customAttributes: {
         tenant_id: new cognito.StringAttribute({ mutable: true }),
         role: new cognito.StringAttribute({ mutable: true }),
+        resource_id: new cognito.StringAttribute({ mutable: true }),
       },
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
@@ -282,6 +283,7 @@ export class BookingsEngineStack extends cdk.Stack {
     addRoute(apigatewayv2.HttpMethod.POST, '/users/invite', usersFn);
     addRoute(apigatewayv2.HttpMethod.POST, '/users/{id}/suspend', usersFn);
     addRoute(apigatewayv2.HttpMethod.POST, '/users/{id}/activate', usersFn);
+    addRoute(apigatewayv2.HttpMethod.POST, '/users/{id}/link-resource', usersFn);
     addRoute(apigatewayv2.HttpMethod.DELETE, '/users/{id}', usersFn);
 
     // ─── Outputs ──────────────────────────────────────────────────────────────

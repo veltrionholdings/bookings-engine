@@ -73,6 +73,34 @@ export async function createCustomer(
     metadata?: Record<string, unknown>;
   }
 ): Promise<Customer> {
+  // Deduplicate: if a customer with this email already exists, return them
+  if (data.email) {
+    const existing = await queryOne<Customer>(
+      'SELECT * FROM customers WHERE tenant_id = $1 AND email = $2',
+      [tenantId, data.email]
+    );
+    if (existing) {
+      // Update their name/phone if provided (they might have changed)
+      if (data.first_name || data.last_name || data.phone) {
+        const updated = await queryOne<Customer>(
+          `UPDATE customers SET first_name = COALESCE($1, first_name), last_name = COALESCE($2, last_name), phone = COALESCE($3, phone) WHERE id = $4 AND tenant_id = $5 RETURNING *`,
+          [data.first_name || null, data.last_name || null, data.phone || null, existing.id, tenantId]
+        );
+        return updated || existing;
+      }
+      return existing;
+    }
+  }
+
+  // Also check by phone if no email match
+  if (data.phone && !data.email) {
+    const existing = await queryOne<Customer>(
+      'SELECT * FROM customers WHERE tenant_id = $1 AND phone = $2',
+      [tenantId, data.phone]
+    );
+    if (existing) return existing;
+  }
+
   const row = await queryOne<Customer>(
     `INSERT INTO customers (tenant_id, first_name, last_name, email, phone, notes, metadata)
      VALUES ($1, $2, $3, $4, $5, $6, $7)

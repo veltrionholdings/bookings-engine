@@ -104,3 +104,136 @@ To cancel or reschedule, please do so at least 24 hours in advance.
     console.error('Failed to send confirmation email:', err);
   }
 }
+
+
+interface BookingCancellationData {
+  customerEmail: string;
+  customerName: string;
+  serviceName: string;
+  date: string;
+  time: string;
+  businessName: string;
+  businessPhone: string;
+  cancelledBy: 'customer' | 'admin';
+}
+
+/**
+ * Send a cancellation notification email to the customer.
+ */
+export async function sendBookingCancellationEmail(data: BookingCancellationData): Promise<void> {
+  const subject = `Appointment Cancelled — ${data.serviceName} at ${data.businessName}`;
+
+  const htmlBody = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <h1 style="color: #E53935; font-size: 24px; margin: 0;">Appointment Cancelled</h1>
+      </div>
+
+      <p style="color: #333; font-size: 16px;">Hi ${data.customerName},</p>
+      <p style="color: #555; font-size: 14px;">
+        ${data.cancelledBy === 'admin'
+          ? 'Unfortunately, your appointment has been cancelled by the salon.'
+          : 'Your appointment has been cancelled as requested.'}
+      </p>
+
+      <div style="background: #fef2f2; border-left: 4px solid #E53935; padding: 16px; border-radius: 4px; margin: 20px 0;">
+        <table style="width: 100%; font-size: 14px; color: #333;">
+          <tr><td style="padding: 6px 0; color: #888;">Service</td><td style="padding: 6px 0; text-decoration: line-through;">${data.serviceName}</td></tr>
+          <tr><td style="padding: 6px 0; color: #888;">Date</td><td style="padding: 6px 0; text-decoration: line-through;">${data.date}</td></tr>
+          <tr><td style="padding: 6px 0; color: #888;">Time</td><td style="padding: 6px 0; text-decoration: line-through;">${data.time}</td></tr>
+        </table>
+      </div>
+
+      <p style="font-size: 14px; color: #555;">
+        ${data.cancelledBy === 'admin'
+          ? 'We apologise for the inconvenience. Please contact us to rebook.'
+          : 'You can rebook at any time through the app.'}
+      </p>
+
+      <p style="font-size: 13px; color: #888; margin-top: 16px;">📞 ${data.businessPhone}</p>
+      <p style="margin-top: 24px; font-size: 12px; color: #aaa; text-align: center;">This email was sent by ${data.businessName} via Veltrion.</p>
+    </div>
+  `;
+
+  const textBody = `Appointment Cancelled\n\nHi ${data.customerName},\n\n${data.cancelledBy === 'admin' ? 'Your appointment has been cancelled by the salon.' : 'Your appointment has been cancelled.'}\n\nService: ${data.serviceName}\nDate: ${data.date}\nTime: ${data.time}\n\n${data.businessPhone}`;
+
+  try {
+    await sesClient.send(new SendEmailCommand({
+      Source: SENDER_EMAIL,
+      Destination: { ToAddresses: [data.customerEmail] },
+      Message: {
+        Subject: { Data: subject },
+        Body: { Html: { Data: htmlBody }, Text: { Data: textBody } },
+      },
+    }));
+    console.log(`Cancellation email sent to ${data.customerEmail}`);
+  } catch (err) {
+    console.error('Failed to send cancellation email:', err);
+  }
+}
+
+interface BookingRescheduleData {
+  customerEmail: string;
+  customerName: string;
+  serviceName: string;
+  oldDate: string;
+  oldTime: string;
+  newDate: string;
+  newTime: string;
+  stylistName: string;
+  businessName: string;
+  businessPhone: string;
+}
+
+/**
+ * Send a reschedule notification email to the customer.
+ */
+export async function sendBookingRescheduleEmail(data: BookingRescheduleData): Promise<void> {
+  const subject = `Appointment Rescheduled — ${data.serviceName} at ${data.businessName}`;
+
+  const htmlBody = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <h1 style="color: #FF9800; font-size: 24px; margin: 0;">Appointment Rescheduled</h1>
+      </div>
+
+      <p style="color: #333; font-size: 16px;">Hi ${data.customerName},</p>
+      <p style="color: #555; font-size: 14px;">Your appointment has been rescheduled to a new time.</p>
+
+      <div style="background: #fff3e0; border-left: 4px solid #FF9800; padding: 16px; border-radius: 4px; margin: 20px 0;">
+        <p style="font-size: 12px; color: #888; margin: 0 0 8px;">Previously:</p>
+        <p style="font-size: 14px; color: #999; text-decoration: line-through; margin: 0;">${data.oldDate} at ${data.oldTime}</p>
+      </div>
+
+      <div style="background: #f9f5fb; border-left: 4px solid #7B2D8B; padding: 16px; border-radius: 4px; margin: 20px 0;">
+        <p style="font-size: 12px; color: #888; margin: 0 0 8px;">New appointment:</p>
+        <table style="width: 100%; font-size: 14px; color: #333;">
+          <tr><td style="padding: 6px 0; color: #888;">Service</td><td style="padding: 6px 0; font-weight: 600;">${data.serviceName}</td></tr>
+          <tr><td style="padding: 6px 0; color: #888;">Date</td><td style="padding: 6px 0; font-weight: 600;">${data.newDate}</td></tr>
+          <tr><td style="padding: 6px 0; color: #888;">Time</td><td style="padding: 6px 0; font-weight: 600;">${data.newTime}</td></tr>
+          <tr><td style="padding: 6px 0; color: #888;">Stylist</td><td style="padding: 6px 0; font-weight: 600;">${data.stylistName}</td></tr>
+        </table>
+      </div>
+
+      <p style="font-size: 13px; color: #666;">If this time doesn't work for you, please contact us to rebook.</p>
+      <p style="font-size: 13px; color: #888;">📞 ${data.businessPhone}</p>
+      <p style="margin-top: 24px; font-size: 12px; color: #aaa; text-align: center;">This email was sent by ${data.businessName} via Veltrion.</p>
+    </div>
+  `;
+
+  const textBody = `Appointment Rescheduled\n\nHi ${data.customerName},\n\nYour appointment has been moved.\n\nPreviously: ${data.oldDate} at ${data.oldTime}\n\nNew appointment:\nService: ${data.serviceName}\nDate: ${data.newDate}\nTime: ${data.newTime}\nStylist: ${data.stylistName}\n\nIf this doesn't work, contact us: ${data.businessPhone}`;
+
+  try {
+    await sesClient.send(new SendEmailCommand({
+      Source: SENDER_EMAIL,
+      Destination: { ToAddresses: [data.customerEmail] },
+      Message: {
+        Subject: { Data: subject },
+        Body: { Html: { Data: htmlBody }, Text: { Data: textBody } },
+      },
+    }));
+    console.log(`Reschedule email sent to ${data.customerEmail}`);
+  } catch (err) {
+    console.error('Failed to send reschedule email:', err);
+  }
+}
