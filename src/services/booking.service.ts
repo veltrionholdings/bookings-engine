@@ -118,34 +118,20 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
 }
 
 /**
- * Cancel a booking, enforcing the cancellation window policy.
+ * Cancel a booking. Customers can cancel at any time — better to free the slot
+ * than have a no-show.
  */
 export async function cancelBooking(
   tenantId: string,
   bookingId: string,
   reason?: string,
-  isAdmin: boolean = false
+  _isAdmin: boolean = false
 ): Promise<Booking> {
-  const tenant = await getTenantById(tenantId);
   const booking = await getBookingById(tenantId, bookingId);
 
   // Only pending/confirmed bookings can be cancelled
   if (booking.status !== 'pending' && booking.status !== 'confirmed') {
     throw new ValidationError(`Cannot cancel a booking with status '${booking.status}'`);
-  }
-
-  // Check cancellation policy (admins can always cancel)
-  if (!isAdmin) {
-    if (!tenant.settings.booking.allow_customer_cancellation) {
-      throw new ForbiddenError('Customer cancellation is not allowed. Please contact the business.');
-    }
-
-    const minutesUntilStart = (new Date(booking.start_time).getTime() - Date.now()) / 60000;
-    if (minutesUntilStart < tenant.settings.booking.cancellation_window_minutes) {
-      throw new ForbiddenError(
-        `Cancellations must be made at least ${tenant.settings.booking.cancellation_window_minutes} minutes before the booking start time`
-      );
-    }
   }
 
   return updateBookingStatus(tenantId, bookingId, 'cancelled', {

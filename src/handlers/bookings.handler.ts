@@ -18,6 +18,7 @@ import {
   getBookingById,
   updateBooking,
 } from '../repositories/booking.repository';
+import { queryOne } from '../utils/db';
 import {
   createBooking,
   cancelBooking,
@@ -29,7 +30,7 @@ import { getServiceById } from '../repositories/service.repository';
 import { createBookingSchema, updateBookingSchema, cancelBookingSchema } from '../models/validation';
 import { ValidationError } from '../utils/errors';
 import { localToUtc, addMinutesToDate, utcToLocal } from '../utils/time';
-import { sendBookingConfirmationEmail, sendBookingCancellationEmail, sendBookingRescheduleEmail } from '../services/email.service';
+import { sendBookingConfirmationEmail, sendBookingCancellationEmail, sendBookingRescheduleEmail, sendBookingNoShowEmail } from '../services/email.service';
 import { getCustomerById } from '../repositories/customer.repository';
 import { getResourceById } from '../repositories/resource.repository';
 
@@ -40,7 +41,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const { method, route } = normalizeEvent(event);
 
     if (route === '/bookings' && method === 'GET') {
-      return await handleList(context.tenant_id, context.role, context.user_id, event.queryStringParameters);
+      return await handleList(context.tenant_id, context.role, context.user_id, event.queryStringParameters, event);
     }
     if (route === '/bookings' && method === 'POST') {
       return await handleCreate(context.tenant_id, event.body);
@@ -60,8 +61,33 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return success(booking);
     }
     if (route === '/bookings/{id}/no-show' && method === 'POST') {
-      requireAdmin(context);
+      // Admin and employees can mark no-shows
+      const existingBooking = await getBookingById(context.tenant_id, bookingId!);
       const booking = await markNoShow(context.tenant_id, bookingId!);
+
+      // Send no-show email
+      try {
+        const tenant = await getTenantById(context.tenant_id);
+        const customer = await getCustomerById(context.tenant_id, existingBooking.customer_id);
+        const service = await getServiceById(context.tenant_id, existingBooking.service_id);
+        const startLocal = utcToLocal(new Date(existingBooking.start_time), tenant.timezone);
+        const endLocal = utcToLocal(new Date(existingBooking.end_time), tenant.timezone);
+        const dateFormatted = new Date(startLocal).toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long' });
+        const timeFormatted = `${startLocal.split('T')[1]?.substring(0, 5)} – ${endLocal.split('T')[1]?.substring(0, 5)}`;
+
+        if (customer.email) {
+          sendBookingNoShowEmail({
+            customerEmail: customer.email,
+            customerName: `${customer.first_name} ${customer.last_name}`,
+            serviceName: service.name,
+            date: dateFormatted,
+            time: timeFormatted,
+            businessName: tenant.name,
+            businessPhone: '078 878 2527',
+          });
+        }
+      } catch (emailErr) { console.error('No-show email failed:', emailErr); }
+
       return success(booking);
     }
 
@@ -75,7 +101,8 @@ async function handleList(
   tenantId: string,
   role: string,
   userId: string,
-  params: Record<string, string | undefined> | null
+  params: Record<string, string | undefined> | null,
+  event: any
 ): Promise<APIGatewayProxyResult> {
   const filters: Record<string, string | undefined> = {
     status: params?.status,
@@ -85,9 +112,26 @@ async function handleList(
     customer_id: params?.customer_id,
   };
 
-  // Customers can only see their own bookings
+  // Customers can only see their own bookings — look up by email
   if (role === 'customer') {
-    filters.customer_id = userId;
+    const authorizer = (event.requestContext as any).authorizer;
+    const claims = authorizer?.jwt?.claims || authorizer?.claims;
+    const email = claims?.email as string;
+
+    if (email) {
+      const customer = await queryOne<any>(
+        'SELECT id FROM customers WHERE tenant_id = $1 AND email = $2',
+        [tenantId, email]
+      );
+      if (customer) {
+        filters.customer_id = customer.id;
+      } else {
+        // No customer record — return empty
+        return success({ data: [], pagination: { next_cursor: null, has_more: false } });
+      }
+    } else {
+      filters.customer_id = userId; // Fallback
+    }
   }
 
   const limit = params?.limit ? parseInt(params.limit, 10) : 20;

@@ -237,3 +237,65 @@ export async function sendBookingRescheduleEmail(data: BookingRescheduleData): P
     console.error('Failed to send reschedule email:', err);
   }
 }
+
+
+interface BookingNoShowData {
+  customerEmail: string;
+  customerName: string;
+  serviceName: string;
+  date: string;
+  time: string;
+  businessName: string;
+  businessPhone: string;
+}
+
+/**
+ * Send a no-show notification email to the customer.
+ */
+export async function sendBookingNoShowEmail(data: BookingNoShowData): Promise<void> {
+  const subject = `Missed Appointment — ${data.serviceName} at ${data.businessName}`;
+
+  const htmlBody = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <h1 style="color: #FF9800; font-size: 24px; margin: 0;">Missed Appointment</h1>
+      </div>
+
+      <p style="color: #333; font-size: 16px;">Hi ${data.customerName},</p>
+      <p style="color: #555; font-size: 14px;">
+        We noticed you didn't make it to your appointment today. We hope everything is okay.
+      </p>
+
+      <div style="background: #fff3e0; border-left: 4px solid #FF9800; padding: 16px; border-radius: 4px; margin: 20px 0;">
+        <table style="width: 100%; font-size: 14px; color: #333;">
+          <tr><td style="padding: 6px 0; color: #888;">Service</td><td style="padding: 6px 0;">${data.serviceName}</td></tr>
+          <tr><td style="padding: 6px 0; color: #888;">Date</td><td style="padding: 6px 0;">${data.date}</td></tr>
+          <tr><td style="padding: 6px 0; color: #888;">Time</td><td style="padding: 6px 0;">${data.time}</td></tr>
+        </table>
+      </div>
+
+      <p style="font-size: 14px; color: #555;">
+        If you'd like to rebook, you can do so anytime through the app. We'd love to see you!
+      </p>
+
+      <p style="font-size: 13px; color: #888; margin-top: 16px;">📞 ${data.businessPhone}</p>
+      <p style="margin-top: 24px; font-size: 12px; color: #aaa; text-align: center;">This email was sent by ${data.businessName} via Veltrion.</p>
+    </div>
+  `;
+
+  const textBody = `Missed Appointment\n\nHi ${data.customerName},\n\nWe noticed you didn't make it to your appointment.\n\nService: ${data.serviceName}\nDate: ${data.date}\nTime: ${data.time}\n\nIf you'd like to rebook, you can do so through the app.\n\n${data.businessPhone}`;
+
+  try {
+    await sesClient.send(new SendEmailCommand({
+      Source: SENDER_EMAIL,
+      Destination: { ToAddresses: [data.customerEmail] },
+      Message: {
+        Subject: { Data: subject },
+        Body: { Html: { Data: htmlBody }, Text: { Data: textBody } },
+      },
+    }));
+    console.log(`No-show email sent to ${data.customerEmail}`);
+  } catch (err) {
+    console.error('Failed to send no-show email:', err);
+  }
+}
