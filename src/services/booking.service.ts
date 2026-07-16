@@ -29,6 +29,7 @@ interface CreateBookingInput {
   start_time: string; // ISO local time
   party_size: number;
   notes?: string;
+  skip_validation?: boolean; // For walk-ins and staff bookings
 }
 
 /**
@@ -47,21 +48,23 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
   const now = new Date();
   const minutesUntilStart = (startTimeUtc.getTime() - now.getTime()) / 60000;
 
-  if (!tenant.settings.booking.allow_past_bookings && minutesUntilStart < 0) {
-    throw new ValidationError('Cannot book in the past');
-  }
+  if (!input.skip_validation) {
+    if (!tenant.settings.booking.allow_past_bookings && minutesUntilStart < 0) {
+      throw new ValidationError('Cannot book in the past');
+    }
 
-  if (minutesUntilStart < tenant.settings.booking.min_advance_minutes) {
-    throw new ValidationError(
-      `Bookings must be made at least ${tenant.settings.booking.min_advance_minutes} minutes in advance`
-    );
-  }
+    if (minutesUntilStart < tenant.settings.booking.min_advance_minutes) {
+      throw new ValidationError(
+        `Bookings must be made at least ${tenant.settings.booking.min_advance_minutes} minutes in advance`
+      );
+    }
 
-  const maxAdvanceMinutes = tenant.settings.booking.max_advance_days * 24 * 60;
-  if (minutesUntilStart > maxAdvanceMinutes) {
-    throw new ValidationError(
-      `Bookings cannot be made more than ${tenant.settings.booking.max_advance_days} days in advance`
-    );
+    const maxAdvanceMinutes = tenant.settings.booking.max_advance_days * 24 * 60;
+    if (minutesUntilStart > maxAdvanceMinutes) {
+      throw new ValidationError(
+        `Bookings cannot be made more than ${tenant.settings.booking.max_advance_days} days in advance`
+      );
+    }
   }
 
   // Determine which resource to book

@@ -28,7 +28,7 @@ import {
 import { getTenantById } from '../repositories/tenant.repository';
 import { getServiceById } from '../repositories/service.repository';
 import { createBookingSchema, updateBookingSchema, cancelBookingSchema } from '../models/validation';
-import { ValidationError } from '../utils/errors';
+import { ValidationError, ForbiddenError } from '../utils/errors';
 import { localToUtc, addMinutesToDate, utcToLocal } from '../utils/time';
 import { sendBookingConfirmationEmail, sendBookingCancellationEmail, sendBookingRescheduleEmail, sendBookingNoShowEmail } from '../services/email.service';
 import { getCustomerById } from '../repositories/customer.repository';
@@ -44,7 +44,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return await handleList(context.tenant_id, context.role, context.user_id, event.queryStringParameters, event);
     }
     if (route === '/bookings' && method === 'POST') {
-      return await handleCreate(context.tenant_id, event.body);
+      return await handleCreate(context.tenant_id, event.body, context.role);
     }
     if (route === '/bookings/{id}' && method === 'GET') {
       return await handleGet(context.tenant_id, bookingId!);
@@ -53,16 +53,16 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return await handleUpdate(context.tenant_id, bookingId!, event.body);
     }
     if (route === '/bookings/{id}/cancel' && method === 'POST') {
-      return await handleCancel(context.tenant_id, bookingId!, event.body, context.role === 'admin');
+      const isStaff = context.role === 'admin' || context.role === 'employee';
+      return await handleCancel(context.tenant_id, bookingId!, event.body, isStaff);
     }
     if (route === '/bookings/{id}/complete' && method === 'POST') {
-      requireAdmin(context);
+      if (context.role !== 'admin' && context.role !== 'employee') throw new ForbiddenError('Staff only');
       const booking = await completeBooking(context.tenant_id, bookingId!);
       return success(booking);
     }
     if (route === '/bookings/{id}/no-show' && method === 'POST') {
-      // Admin and employees can mark no-shows
-      const existingBooking = await getBookingById(context.tenant_id, bookingId!);
+      if (context.role !== 'admin' && context.role !== 'employee') throw new ForbiddenError('Staff only');
       const booking = await markNoShow(context.tenant_id, bookingId!);
 
       // Send no-show email
@@ -182,10 +182,12 @@ async function handleList(
   return success({ data: enrichedData, pagination: result.pagination });
 }
 
-async function handleCreate(tenantId: string, body: string | null): Promise<APIGatewayProxyResult> {
+async function handleCreate(tenantId: string, body: string | null, role: string): Promise<APIGatewayProxyResult> {
   if (!body) throw new ValidationError('Request body is required');
   const parsed = createBookingSchema.safeParse(JSON.parse(body));
   if (!parsed.success) throw new ValidationError('Invalid request body', { issues: parsed.error.issues });
+
+  const isStaff = role === 'admin' || role === 'employee';
 
   const booking = await createBooking({
     tenant_id: tenantId,
@@ -195,6 +197,7 @@ async function handleCreate(tenantId: string, body: string | null): Promise<APIG
     start_time: parsed.data.start_time,
     party_size: parsed.data.party_size,
     notes: parsed.data.notes,
+    skip_validation: isStaff,
   });
 
   // Enrich response with local times

@@ -21,7 +21,7 @@ import {
   exportCustomerData,
 } from '../repositories/customer.repository';
 import { createCustomerSchema, updateCustomerSchema } from '../models/validation';
-import { ValidationError } from '../utils/errors';
+import { ValidationError, ForbiddenError } from '../utils/errors';
 
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   try {
@@ -30,7 +30,10 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const { method, route } = normalizeEvent(event);
 
     if (route === '/customers' && method === 'GET') {
-      requireAdmin(context);
+      // Admin and employees can search customers
+      if (context.role !== 'admin' && context.role !== 'employee') {
+        throw new ForbiddenError('Access denied');
+      }
       return await handleList(context.tenant_id, event.queryStringParameters);
     }
     if (route === '/customers' && method === 'POST') {
