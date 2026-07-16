@@ -184,5 +184,5 @@ export interface PaginatedResult<T> {
 export interface RequestContext {
   tenant_id: string;
   user_id: string;
-  role: 'admin' | 'customer';
+  role: 'admin' | 'employee' | 'customer';
 }

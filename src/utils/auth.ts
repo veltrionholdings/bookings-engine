@@ -36,7 +36,7 @@ export function getRequestContext(event: APIGatewayProxyEvent): RequestContext {
     throw new UnauthorizedError('No user ID in token claims');
   }
 
-  if (role !== 'admin' && role !== 'customer') {
+  if (role !== 'admin' && role !== 'employee' && role !== 'customer') {
     throw new UnauthorizedError('Invalid role in token claims');
   }
 

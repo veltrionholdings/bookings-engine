@@ -68,10 +68,10 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       // Send no-show email
       try {
         const tenant = await getTenantById(context.tenant_id);
-        const customer = await getCustomerById(context.tenant_id, existingBooking.customer_id);
-        const service = await getServiceById(context.tenant_id, existingBooking.service_id);
-        const startLocal = utcToLocal(new Date(existingBooking.start_time), tenant.timezone);
-        const endLocal = utcToLocal(new Date(existingBooking.end_time), tenant.timezone);
+        const customer = await getCustomerById(context.tenant_id, booking.customer_id);
+        const service = await getServiceById(context.tenant_id, booking.service_id);
+        const startLocal = utcToLocal(new Date(booking.start_time), tenant.timezone);
+        const endLocal = utcToLocal(new Date(booking.end_time), tenant.timezone);
         const dateFormatted = new Date(startLocal).toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long' });
         const timeFormatted = `${startLocal.split('T')[1]?.substring(0, 5)} – ${endLocal.split('T')[1]?.substring(0, 5)}`;
 
