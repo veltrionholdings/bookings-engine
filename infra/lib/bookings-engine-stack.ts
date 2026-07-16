@@ -286,6 +286,148 @@ export class BookingsEngineStack extends cdk.Stack {
     addRoute(apigatewayv2.HttpMethod.POST, '/users/{id}/link-resource', usersFn);
     addRoute(apigatewayv2.HttpMethod.DELETE, '/users/{id}', usersFn);
 
+    // ─── Platform Admin Cognito User Pool (separate, more secure) ────────────
+    const platformPool = new cognito.UserPool(this, 'PlatformAdminPool', {
+      userPoolName: 'bookings-engine-platform-admins',
+      selfSignUpEnabled: false, // Only manual creation
+      signInAliases: { email: true },
+      autoVerify: { email: true },
+      passwordPolicy: {
+        minLength: 12,
+        requireLowercase: true,
+        requireUppercase: true,
+        requireDigits: true,
+        requireSymbols: true,
+      },
+      mfa: cognito.Mfa.OPTIONAL,
+      mfaSecondFactor: { sms: false, otp: true },
+      customAttributes: {
+        role: new cognito.StringAttribute({ mutable: true }),
+      },
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    const platformPoolClient = platformPool.addClient('PlatformPortalClient', {
+      authFlows: {
+        userPassword: true,
+        userSrp: true,
+      },
+      generateSecret: false,
+      idTokenValidity: cdk.Duration.hours(8),
+      accessTokenValidity: cdk.Duration.hours(8),
+      refreshTokenValidity: cdk.Duration.days(7),
+    });
+
+    // ─── Platform Lambda ──────────────────────────────────────────────────────
+    const platformFn = createLambda('Platform', 'platform.handler.ts');
+
+    // Platform Lambda needs broad permissions for admin operations
+    platformFn.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+      actions: [
+        'cognito-idp:AdminCreateUser',
+        'cognito-idp:AdminUpdateUserAttributes',
+        'cognito-idp:AdminDisableUser',
+        'cognito-idp:AdminEnableUser',
+        'cognito-idp:AdminDeleteUser',
+        'cognito-idp:AdminResetUserPassword',
+        'cognito-idp:ListUsers',
+        'cognito-idp:AdminGetUser',
+      ],
+      resources: [userPool.userPoolArn, platformPool.userPoolArn],
+    }));
+
+    platformFn.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+      actions: [
+        'cloudwatch:GetMetricData',
+        'cloudwatch:GetMetricStatistics',
+        'cloudwatch:ListMetrics',
+        'logs:GetLogEvents',
+        'logs:FilterLogEvents',
+      ],
+      resources: ['*'],
+    }));
+
+    platformFn.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+      actions: ['ses:SendEmail', 'ses:SendRawEmail', 'ses:GetSendStatistics'],
+      resources: ['*'],
+    }));
+
+    platformFn.addEnvironment('COGNITO_USER_POOL_ID', userPool.userPoolId);
+    platformFn.addEnvironment('PLATFORM_USER_POOL_ID', platformPool.userPoolId);
+
+    // Platform JWT authorizer (uses the platform admin pool)
+    const platformAuthorizer = new authorizers.HttpJwtAuthorizer(
+      'PlatformAuthorizer',
+      `https://cognito-idp.${this.region}.amazonaws.com/${platformPool.userPoolId}`,
+      { jwtAudience: [platformPoolClient.userPoolClientId] }
+    );
+
+    // Helper to add platform-authenticated routes
+    const addPlatformRoute = (
+      method: apigatewayv2.HttpMethod,
+      path: string,
+    ) => {
+      httpApi.addRoutes({
+        path: `/v1${path}`,
+        methods: [method],
+        integration: new integrations.HttpLambdaIntegration(`platform${method}${path.replace(/[\/{}]/g, '-')}`, platformFn),
+        authorizer: platformAuthorizer,
+      });
+    };
+
+    // Platform routes
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/health');
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/metrics/api');
+
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/tenants');
+    addPlatformRoute(apigatewayv2.HttpMethod.POST, '/platform/tenants');
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/tenants/{id}');
+    addPlatformRoute(apigatewayv2.HttpMethod.PATCH, '/platform/tenants/{id}');
+    addPlatformRoute(apigatewayv2.HttpMethod.POST, '/platform/tenants/{id}/suspend');
+    addPlatformRoute(apigatewayv2.HttpMethod.POST, '/platform/tenants/{id}/activate');
+    addPlatformRoute(apigatewayv2.HttpMethod.DELETE, '/platform/tenants/{id}');
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/tenants/{id}/features');
+    addPlatformRoute(apigatewayv2.HttpMethod.PATCH, '/platform/tenants/{id}/features');
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/tenants/{id}/bookings/{bookingId}');
+
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/users');
+    addPlatformRoute(apigatewayv2.HttpMethod.POST, '/platform/users/{id}/reset-password');
+    addPlatformRoute(apigatewayv2.HttpMethod.PATCH, '/platform/users/{id}/attributes');
+    addPlatformRoute(apigatewayv2.HttpMethod.POST, '/platform/users/{id}/disable');
+    addPlatformRoute(apigatewayv2.HttpMethod.POST, '/platform/users/{id}/enable');
+    addPlatformRoute(apigatewayv2.HttpMethod.DELETE, '/platform/users/{id}');
+
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/bookings/search');
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/audit-logs');
+
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/database/tables');
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/database/tables/{table}/rows');
+    addPlatformRoute(apigatewayv2.HttpMethod.POST, '/platform/database/tables/{table}/rows');
+    addPlatformRoute(apigatewayv2.HttpMethod.PATCH, '/platform/database/tables/{table}/rows/{rowId}');
+    addPlatformRoute(apigatewayv2.HttpMethod.DELETE, '/platform/database/tables/{table}/rows/{rowId}');
+    addPlatformRoute(apigatewayv2.HttpMethod.POST, '/platform/database/query');
+
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/emails');
+    addPlatformRoute(apigatewayv2.HttpMethod.POST, '/platform/emails/{id}/resend');
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/emails/templates');
+    addPlatformRoute(apigatewayv2.HttpMethod.PATCH, '/platform/emails/templates/{id}');
+
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/config');
+    addPlatformRoute(apigatewayv2.HttpMethod.PATCH, '/platform/config');
+
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/api-keys');
+    addPlatformRoute(apigatewayv2.HttpMethod.POST, '/platform/api-keys');
+    addPlatformRoute(apigatewayv2.HttpMethod.DELETE, '/platform/api-keys/{id}');
+
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/jobs');
+    addPlatformRoute(apigatewayv2.HttpMethod.POST, '/platform/jobs/{id}/trigger');
+    addPlatformRoute(apigatewayv2.HttpMethod.PATCH, '/platform/jobs/{id}');
+
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/announcements');
+    addPlatformRoute(apigatewayv2.HttpMethod.POST, '/platform/announcements');
+
+    addPlatformRoute(apigatewayv2.HttpMethod.GET, '/platform/usage');
+
     // ─── Outputs ──────────────────────────────────────────────────────────────
     new cdk.CfnOutput(this, 'ApiUrl', {
       value: httpApi.apiEndpoint,
@@ -300,6 +442,16 @@ export class BookingsEngineStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'UserPoolClientId', {
       value: userPoolClient.userPoolClientId,
       description: 'Cognito User Pool Client ID',
+    });
+
+    new cdk.CfnOutput(this, 'PlatformPoolId', {
+      value: platformPool.userPoolId,
+      description: 'Platform Admin Cognito User Pool ID',
+    });
+
+    new cdk.CfnOutput(this, 'PlatformPoolClientId', {
+      value: platformPoolClient.userPoolClientId,
+      description: 'Platform Admin Cognito Client ID',
     });
 
     new cdk.CfnOutput(this, 'DatabaseEndpoint', {
