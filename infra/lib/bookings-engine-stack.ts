@@ -94,6 +94,72 @@ export class BookingsEngineStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
+    // Pre-token-generation trigger: injects custom:tenant_id + custom:role for
+    // users that lack them (notably federated/Google users). Without this,
+    // their tokens would be rejected by the API's JWT authorizer.
+    const preTokenFn = new nodejs.NodejsFunction(this, 'PreToken', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      logRetention: logs.RetentionDays.ONE_WEEK,
+      functionName: 'bookings-pretoken',
+      entry: '../src/handlers/pre-token.handler.ts',
+      handler: 'handler',
+      environment: {
+        DEFAULT_TENANT_ID: 'da8e5df8-f070-4671-a176-590a76c574b2',
+        NODE_OPTIONS: '--enable-source-maps',
+      },
+      bundling: {
+        minify: true,
+        sourceMap: true,
+        target: 'node20',
+        format: nodejs.OutputFormat.CJS,
+        keepNames: true,
+      },
+    });
+    userPool.addTrigger(cognito.UserPoolOperation.PRE_TOKEN_GENERATION, preTokenFn);
+
+    // ─── Google federated identity provider ───────────────────────────────────
+    // Credentials are supplied at deploy time via CDK context so the secret is
+    // never committed:  cdk deploy -c googleClientId=... -c googleClientSecret=...
+    const googleClientId = this.node.tryGetContext('googleClientId') as string | undefined;
+    const googleClientSecret = this.node.tryGetContext('googleClientSecret') as string | undefined;
+
+    let googleProvider: cognito.UserPoolIdentityProviderGoogle | undefined;
+    if (googleClientId && googleClientSecret) {
+      googleProvider = new cognito.UserPoolIdentityProviderGoogle(this, 'GoogleIdP', {
+        userPool,
+        clientId: googleClientId,
+        clientSecretValue: cdk.SecretValue.unsafePlainText(googleClientSecret),
+        scopes: ['openid', 'email', 'profile'],
+        attributeMapping: {
+          email: cognito.ProviderAttribute.GOOGLE_EMAIL,
+          givenName: cognito.ProviderAttribute.GOOGLE_GIVEN_NAME,
+          familyName: cognito.ProviderAttribute.GOOGLE_FAMILY_NAME,
+        },
+      });
+    }
+
+    // Hosted UI domain (required for the federated OAuth redirect flow).
+    // Prefix is configurable so it can stay globally unique.
+    const hostedUiPrefix = (this.node.tryGetContext('hostedUiPrefix') as string) || 'tas-hair-auth';
+    const userPoolDomain = userPool.addDomain('BookingsHostedUi', {
+      cognitoDomain: { domainPrefix: hostedUiPrefix },
+    });
+
+    // Callback / logout URLs for the Hosted UI. Comma-separated context values
+    // let us point at the real Vercel domain without hardcoding it here.
+    const callbackUrls = ((this.node.tryGetContext('oauthCallbackUrls') as string) ||
+      'http://localhost:5173/auth/callback')
+      .split(',')
+      .map((u) => u.trim())
+      .filter(Boolean);
+    const logoutUrls = ((this.node.tryGetContext('oauthLogoutUrls') as string) ||
+      'http://localhost:5173/login')
+      .split(',')
+      .map((u) => u.trim())
+      .filter(Boolean);
+
     const userPoolClient = userPool.addClient('BookingsApiClient', {
       authFlows: {
         userPassword: true,
@@ -103,7 +169,26 @@ export class BookingsEngineStack extends cdk.Stack {
       idTokenValidity: cdk.Duration.hours(24),
       accessTokenValidity: cdk.Duration.hours(24),
       refreshTokenValidity: cdk.Duration.days(30),
+      supportedIdentityProviders: [
+        cognito.UserPoolClientIdentityProvider.COGNITO,
+        ...(googleProvider ? [cognito.UserPoolClientIdentityProvider.GOOGLE] : []),
+      ],
+      oAuth: {
+        flows: { authorizationCodeGrant: true },
+        scopes: [
+          cognito.OAuthScope.OPENID,
+          cognito.OAuthScope.EMAIL,
+          cognito.OAuthScope.PROFILE,
+        ],
+        callbackUrls,
+        logoutUrls,
+      },
     });
+
+    // Ensure the client is created after the Google IdP so it can reference it.
+    if (googleProvider) {
+      userPoolClient.node.addDependency(googleProvider);
+    }
 
     // ─── Lambda Functions (outside VPC) ───────────────────────────────────────
     const dbSecret = database.secret!;
@@ -442,6 +527,11 @@ export class BookingsEngineStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'UserPoolClientId', {
       value: userPoolClient.userPoolClientId,
       description: 'Cognito User Pool Client ID',
+    });
+
+    new cdk.CfnOutput(this, 'HostedUiDomain', {
+      value: `${userPoolDomain.domainName}.auth.${this.region}.amazoncognito.com`,
+      description: 'Cognito Hosted UI domain (for the Google OAuth redirect flow)',
     });
 
     new cdk.CfnOutput(this, 'PlatformPoolId', {
