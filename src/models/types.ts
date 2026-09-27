@@ -122,6 +122,9 @@ export interface Customer {
   phone: string | null;
   notes: string | null;
   metadata: Record<string, unknown>;
+  marketing_consent: boolean;
+  marketing_consent_at: Date | null;
+  marketing_consent_version: string | null;
   created_at: Date;
   updated_at: Date;
 }

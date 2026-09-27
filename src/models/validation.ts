@@ -133,6 +133,8 @@ export const createCustomerSchema = z.object({
   phone: z.string().max(50).optional(),
   notes: z.string().max(2000).optional(),
   metadata: z.record(z.unknown()).optional(),
+  marketing_consent: z.boolean().optional(),
+  marketing_consent_version: z.string().max(50).optional(),
 });
 
 export const updateCustomerSchema = z.object({
@@ -142,6 +144,8 @@ export const updateCustomerSchema = z.object({
   phone: z.string().max(50).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   metadata: z.record(z.unknown()).optional(),
+  marketing_consent: z.boolean().optional(),
+  marketing_consent_version: z.string().max(50).optional(),
 });
 
 // ─── Availability ───────────────────────────────────────────────────────────────

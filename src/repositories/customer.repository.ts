@@ -71,8 +71,13 @@ export async function createCustomer(
     phone?: string;
     notes?: string;
     metadata?: Record<string, unknown>;
+    marketing_consent?: boolean;
+    marketing_consent_version?: string;
   }
 ): Promise<Customer> {
+  const consentGiven = data.marketing_consent === true;
+  const consentVersion = data.marketing_consent_version ?? null;
+
   // Deduplicate: if a customer with this email already exists, return them
   if (data.email) {
     const existing = await queryOne<Customer>(
@@ -80,15 +85,31 @@ export async function createCustomer(
       [tenantId, data.email]
     );
     if (existing) {
-      // Update their name/phone if provided (they might have changed)
-      if (data.first_name || data.last_name || data.phone) {
-        const updated = await queryOne<Customer>(
-          `UPDATE customers SET first_name = COALESCE($1, first_name), last_name = COALESCE($2, last_name), phone = COALESCE($3, phone) WHERE id = $4 AND tenant_id = $5 RETURNING *`,
-          [data.first_name || null, data.last_name || null, data.phone || null, existing.id, tenantId]
-        );
-        return updated || existing;
-      }
-      return existing;
+      // Update their name/phone if provided (they might have changed).
+      // Only record consent when it is explicitly granted so we never silently
+      // downgrade an existing opt-in during a re-registration.
+      const setConsent = data.marketing_consent !== undefined;
+      const updated = await queryOne<Customer>(
+        `UPDATE customers SET
+           first_name = COALESCE($1, first_name),
+           last_name = COALESCE($2, last_name),
+           phone = COALESCE($3, phone),
+           marketing_consent = CASE WHEN $4 THEN $5 ELSE marketing_consent END,
+           marketing_consent_at = CASE WHEN $4 AND $5 <> marketing_consent THEN NOW() ELSE marketing_consent_at END,
+           marketing_consent_version = CASE WHEN $4 THEN COALESCE($6, marketing_consent_version) ELSE marketing_consent_version END
+         WHERE id = $7 AND tenant_id = $8 RETURNING *`,
+        [
+          data.first_name || null,
+          data.last_name || null,
+          data.phone || null,
+          setConsent,
+          consentGiven,
+          consentVersion,
+          existing.id,
+          tenantId,
+        ]
+      );
+      return updated || existing;
     }
   }
 
@@ -102,8 +123,8 @@ export async function createCustomer(
   }
 
   const row = await queryOne<Customer>(
-    `INSERT INTO customers (tenant_id, first_name, last_name, email, phone, notes, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO customers (tenant_id, first_name, last_name, email, phone, notes, metadata, marketing_consent, marketing_consent_at, marketing_consent_version)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [
       tenantId,
@@ -113,6 +134,9 @@ export async function createCustomer(
       data.phone ?? null,
       data.notes ?? null,
       JSON.stringify(data.metadata ?? {}),
+      consentGiven,
+      consentGiven ? new Date() : null,
+      consentGiven ? consentVersion : null,
     ]
   );
   return row!;
@@ -128,6 +152,8 @@ export async function updateCustomer(
     phone?: string | null;
     notes?: string | null;
     metadata?: Record<string, unknown>;
+    marketing_consent?: boolean;
+    marketing_consent_version?: string;
   }
 ): Promise<Customer> {
   const setClauses: string[] = [];
@@ -140,6 +166,14 @@ export async function updateCustomer(
   if (data.phone !== undefined) { setClauses.push(`phone = $${paramIndex++}`); params.push(data.phone); }
   if (data.notes !== undefined) { setClauses.push(`notes = $${paramIndex++}`); params.push(data.notes); }
   if (data.metadata !== undefined) { setClauses.push(`metadata = $${paramIndex++}`); params.push(JSON.stringify(data.metadata)); }
+  if (data.marketing_consent !== undefined) {
+    setClauses.push(`marketing_consent = $${paramIndex++}`); params.push(data.marketing_consent);
+    // Stamp the consent time only when the value actually changes.
+    setClauses.push(`marketing_consent_at = CASE WHEN marketing_consent <> $${paramIndex - 1} THEN NOW() ELSE marketing_consent_at END`);
+    if (data.marketing_consent_version !== undefined) {
+      setClauses.push(`marketing_consent_version = $${paramIndex++}`); params.push(data.marketing_consent_version);
+    }
+  }
 
   if (setClauses.length === 0) return getCustomerById(tenantId, id);
 
