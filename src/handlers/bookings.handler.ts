@@ -89,6 +89,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
               fromEmail: emailCfg?.from_email,
               fromName: emailCfg?.from_name || tenant.name,
               replyTo: emailCfg?.reply_to,
+              logoUrl: emailCfg?.logo_url,
               showPlatformFooter: emailCfg?.show_platform_footer,
             },
           });
@@ -252,6 +253,7 @@ async function handleCreate(tenantId: string, body: string | null, role: string)
           fromEmail: emailCfg?.from_email,
           fromName: emailCfg?.from_name || tenant.name,
           replyTo: emailCfg?.reply_to,
+          logoUrl: emailCfg?.logo_url,
           showPlatformFooter: emailCfg?.show_platform_footer,
         },
       });
@@ -349,6 +351,7 @@ async function handleUpdate(tenantId: string, id: string, body: string | null): 
             fromEmail: emailCfg?.from_email,
             fromName: emailCfg?.from_name || tenant.name,
             replyTo: emailCfg?.reply_to,
+            logoUrl: emailCfg?.logo_url,
             showPlatformFooter: emailCfg?.show_platform_footer,
           },
         });
@@ -406,6 +409,7 @@ async function handleCancel(
           fromEmail: emailCfg?.from_email,
           fromName: emailCfg?.from_name || tenant.name,
           replyTo: emailCfg?.reply_to,
+          logoUrl: emailCfg?.logo_url,
           showPlatformFooter: emailCfg?.show_platform_footer,
         },
       });

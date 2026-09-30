@@ -41,6 +41,7 @@ export const updateTenantSchema = z.object({
       reply_to: z.string().email().max(255).optional(),
       business_address: z.string().max(500).optional(),
       business_phone: z.string().max(50).optional(),
+      logo_url: z.string().url().max(500).optional(),
       show_platform_footer: z.boolean().optional(),
     }).optional(),
   }).optional(),

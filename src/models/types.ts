@@ -43,6 +43,7 @@ export interface TenantSettings {
     reply_to?: string;          // optional reply-to address
     business_address?: string;  // shown in the email body/footer
     business_phone?: string;    // shown in the email body/footer
+    logo_url?: string;          // publicly-hosted logo shown at the top of emails
     show_platform_footer?: boolean; // false hides the "via Veltrion" line
   };
 }

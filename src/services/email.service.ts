@@ -19,7 +19,23 @@ interface SenderConfig {
   fromEmail?: string;
   fromName?: string;
   replyTo?: string;
+  logoUrl?: string;
   showPlatformFooter?: boolean;
+}
+
+/**
+ * Renders the email header: the tenant's hosted logo if configured, otherwise
+ * the given text title. `titleColor` matches each email type's accent colour.
+ */
+function emailHeaderHtml(title: string, titleColor: string, sender: SenderConfig): string {
+  const logo = sender.logoUrl
+    ? `<img src="${sender.logoUrl}" alt="${sender.fromName || ''}" style="max-height: 64px; max-width: 200px; margin: 0 auto 12px; display: block;" />`
+    : '';
+  return `
+      <div style="text-align: center; margin-bottom: 24px;">
+        ${logo}
+        <h1 style="color: ${titleColor}; font-size: 24px; margin: 0;">${title}</h1>
+      </div>`;
 }
 
 /**
@@ -72,9 +88,7 @@ export async function sendBookingConfirmationEmail(data: BookingConfirmationData
 
   const htmlBody = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
-      <div style="text-align: center; margin-bottom: 24px;">
-        <h1 style="color: #7B2D8B; font-size: 24px; margin: 0;">Booking Confirmed ✓</h1>
-      </div>
+      ${emailHeaderHtml('Booking Confirmed ✓', '#7B2D8B', data.sender || {})}
 
       <p style="color: #333; font-size: 16px;">Hi ${data.customerName},</p>
       <p style="color: #555; font-size: 14px;">Your appointment has been confirmed. Here are the details:</p>
@@ -166,9 +180,7 @@ export async function sendBookingCancellationEmail(data: BookingCancellationData
 
   const htmlBody = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
-      <div style="text-align: center; margin-bottom: 24px;">
-        <h1 style="color: #E53935; font-size: 24px; margin: 0;">Appointment Cancelled</h1>
-      </div>
+      ${emailHeaderHtml('Appointment Cancelled', '#E53935', data.sender || {})}
 
       <p style="color: #333; font-size: 16px;">Hi ${data.customerName},</p>
       <p style="color: #555; font-size: 14px;">
@@ -237,9 +249,7 @@ export async function sendBookingRescheduleEmail(data: BookingRescheduleData): P
 
   const htmlBody = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
-      <div style="text-align: center; margin-bottom: 24px;">
-        <h1 style="color: #FF9800; font-size: 24px; margin: 0;">Appointment Rescheduled</h1>
-      </div>
+      ${emailHeaderHtml('Appointment Rescheduled', '#FF9800', data.sender || {})}
 
       <p style="color: #333; font-size: 16px;">Hi ${data.customerName},</p>
       <p style="color: #555; font-size: 14px;">Your appointment has been rescheduled to a new time.</p>
@@ -304,9 +314,7 @@ export async function sendBookingNoShowEmail(data: BookingNoShowData): Promise<v
 
   const htmlBody = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
-      <div style="text-align: center; margin-bottom: 24px;">
-        <h1 style="color: #FF9800; font-size: 24px; margin: 0;">Missed Appointment</h1>
-      </div>
+      ${emailHeaderHtml('Missed Appointment', '#FF9800', data.sender || {})}
 
       <p style="color: #333; font-size: 16px;">Hi ${data.customerName},</p>
       <p style="color: #555; font-size: 14px;">
