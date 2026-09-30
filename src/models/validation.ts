@@ -35,6 +35,14 @@ export const updateTenantSchema = z.object({
       send_reminder: z.boolean().optional(),
       reminder_hours_before: z.number().int().min(1).optional(),
     }).optional(),
+    email: z.object({
+      from_email: z.string().email().max(255).optional(),
+      from_name: z.string().max(255).optional(),
+      reply_to: z.string().email().max(255).optional(),
+      business_address: z.string().max(500).optional(),
+      business_phone: z.string().max(50).optional(),
+      show_platform_footer: z.boolean().optional(),
+    }).optional(),
   }).optional(),
 });
 

@@ -32,6 +32,19 @@ export interface TenantSettings {
     send_reminder: boolean;
     reminder_hours_before: number;
   };
+  /**
+   * Per-tenant email sender identity and contact details (white-label).
+   * When a field is unset, the platform default is used. To send genuinely
+   * "as the tenant", from_email must be on a domain verified in SES.
+   */
+  email?: {
+    from_email?: string;        // e.g. bookings@tashair.co.za
+    from_name?: string;         // display name, e.g. "Tas Hair & Beauty Cafe"
+    reply_to?: string;          // optional reply-to address
+    business_address?: string;  // shown in the email body/footer
+    business_phone?: string;    // shown in the email body/footer
+    show_platform_footer?: boolean; // false hides the "via Veltrion" line
+  };
 }
 
 export interface Tenant {

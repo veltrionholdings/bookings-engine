@@ -76,6 +76,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         const timeFormatted = `${startLocal.split('T')[1]?.substring(0, 5)} – ${endLocal.split('T')[1]?.substring(0, 5)}`;
 
         if (customer.email) {
+          const emailCfg = tenant.settings?.email;
           sendBookingNoShowEmail({
             customerEmail: customer.email,
             customerName: `${customer.first_name} ${customer.last_name}`,
@@ -83,7 +84,13 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
             date: dateFormatted,
             time: timeFormatted,
             businessName: tenant.name,
-            businessPhone: '078 878 2527',
+            businessPhone: emailCfg?.business_phone || '',
+            sender: {
+              fromEmail: emailCfg?.from_email,
+              fromName: emailCfg?.from_name || tenant.name,
+              replyTo: emailCfg?.reply_to,
+              showPlatformFooter: emailCfg?.show_platform_footer,
+            },
           });
         }
       } catch (emailErr) { console.error('No-show email failed:', emailErr); }
@@ -230,6 +237,7 @@ async function handleCreate(tenantId: string, body: string | null, role: string)
     const endTime = endLocal.split('T')[1]?.substring(0, 5) || '';
 
     if (customer.email) {
+      const emailCfg = tenant.settings?.email;
       sendBookingConfirmationEmail({
         customerEmail: customer.email,
         customerName: `${customer.first_name} ${customer.last_name}`,
@@ -238,8 +246,14 @@ async function handleCreate(tenantId: string, body: string | null, role: string)
         time: `${startTime} – ${endTime}`,
         stylistName: resource?.name || 'Any Available',
         businessName: tenant.name,
-        businessAddress: '271/206 Block IA, Soshanguve',
-        businessPhone: '078 878 2527',
+        businessAddress: emailCfg?.business_address || '',
+        businessPhone: emailCfg?.business_phone || '',
+        sender: {
+          fromEmail: emailCfg?.from_email,
+          fromName: emailCfg?.from_name || tenant.name,
+          replyTo: emailCfg?.reply_to,
+          showPlatformFooter: emailCfg?.show_platform_footer,
+        },
       });
     }
   } catch (emailErr) {
@@ -319,6 +333,7 @@ async function handleUpdate(tenantId: string, id: string, body: string | null): 
       const newTime = `${newStartLocal.split('T')[1]?.substring(0, 5)} – ${newEndLocal.split('T')[1]?.substring(0, 5)}`;
 
       if (customer.email) {
+        const emailCfg = tenant.settings?.email;
         sendBookingRescheduleEmail({
           customerEmail: customer.email,
           customerName: `${customer.first_name} ${customer.last_name}`,
@@ -329,7 +344,13 @@ async function handleUpdate(tenantId: string, id: string, body: string | null): 
           newTime,
           stylistName: resource?.name || 'Any Available',
           businessName: tenant.name,
-          businessPhone: '078 878 2527',
+          businessPhone: emailCfg?.business_phone || '',
+          sender: {
+            fromEmail: emailCfg?.from_email,
+            fromName: emailCfg?.from_name || tenant.name,
+            replyTo: emailCfg?.reply_to,
+            showPlatformFooter: emailCfg?.show_platform_footer,
+          },
         });
       }
     } catch (emailErr) {
@@ -371,6 +392,7 @@ async function handleCancel(
     const endTime = endLocal.split('T')[1]?.substring(0, 5) || '';
 
     if (customer.email) {
+      const emailCfg = tenant.settings?.email;
       sendBookingCancellationEmail({
         customerEmail: customer.email,
         customerName: `${customer.first_name} ${customer.last_name}`,
@@ -378,8 +400,14 @@ async function handleCancel(
         date: dateFormatted,
         time: `${startTime} – ${endTime}`,
         businessName: tenant.name,
-        businessPhone: '078 878 2527',
+        businessPhone: emailCfg?.business_phone || '',
         cancelledBy: isAdmin ? 'admin' : 'customer',
+        sender: {
+          fromEmail: emailCfg?.from_email,
+          fromName: emailCfg?.from_name || tenant.name,
+          replyTo: emailCfg?.reply_to,
+          showPlatformFooter: emailCfg?.show_platform_footer,
+        },
       });
     }
   } catch (emailErr) {

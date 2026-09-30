@@ -9,7 +9,46 @@
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 
 const sesClient = new SESClient({ region: process.env.AWS_REGION || 'eu-west-1' });
-const SENDER_EMAIL = process.env.SENDER_EMAIL || 'noreply@veltrion.co.za';
+const DEFAULT_SENDER_EMAIL = process.env.SENDER_EMAIL || 'noreply@veltrion.co.za';
+
+/**
+ * Per-tenant sender identity, passed through from the tenant's settings.email.
+ * Any field left unset falls back to the platform default.
+ */
+interface SenderConfig {
+  fromEmail?: string;
+  fromName?: string;
+  replyTo?: string;
+  showPlatformFooter?: boolean;
+}
+
+/**
+ * Build the SES `Source` header: "Display Name <address>" when a name is given.
+ * RFC 5322 requires the display name be quoted if it contains special chars;
+ * we quote unconditionally when present, which is always valid.
+ */
+function buildSource(sender: SenderConfig): string {
+  const email = sender.fromEmail || DEFAULT_SENDER_EMAIL;
+  if (sender.fromName) {
+    const safeName = sender.fromName.replace(/"/g, '');
+    return `"${safeName}" <${email}>`;
+  }
+  return email;
+}
+
+/** The optional "sent via Veltrion" footer line — hidden for white-label tenants. */
+function platformFooterHtml(businessName: string, sender: SenderConfig): string {
+  if (sender.showPlatformFooter === false) {
+    return `<p style="margin-top: 24px; font-size: 12px; color: #aaa; text-align: center;">This email was sent by ${businessName}.</p>`;
+  }
+  return `<p style="margin-top: 24px; font-size: 12px; color: #aaa; text-align: center;">This email was sent by ${businessName} via Veltrion.</p>`;
+}
+
+function platformFooterText(businessName: string, sender: SenderConfig): string {
+  return sender.showPlatformFooter === false
+    ? `\nThis email was sent by ${businessName}.`
+    : `\nThis email was sent by ${businessName} via Veltrion.`;
+}
 
 interface BookingConfirmationData {
   customerEmail: string;
@@ -21,6 +60,7 @@ interface BookingConfirmationData {
   businessName: string;
   businessAddress: string;
   businessPhone: string;
+  sender?: SenderConfig;
 }
 
 /**
@@ -59,9 +99,7 @@ export async function sendBookingConfirmationEmail(data: BookingConfirmationData
         To cancel or reschedule, please do so at least 24 hours in advance.
       </div>
 
-      <p style="margin-top: 24px; font-size: 12px; color: #aaa; text-align: center;">
-        This email was sent by ${data.businessName} via Veltrion.
-      </p>
+      ${platformFooterHtml(data.businessName, data.sender || {})}
     </div>
   `;
 
@@ -82,11 +120,13 @@ ${data.businessPhone}
 
 Please arrive 5 minutes before your appointment.
 To cancel or reschedule, please do so at least 24 hours in advance.
-`;
+${platformFooterText(data.businessName, data.sender || {})}`;
 
   try {
+    const sender = data.sender || {};
     await sesClient.send(new SendEmailCommand({
-      Source: SENDER_EMAIL,
+      Source: buildSource(sender),
+      ...(sender.replyTo ? { ReplyToAddresses: [sender.replyTo] } : {}),
       Destination: {
         ToAddresses: [data.customerEmail],
       },
@@ -115,6 +155,7 @@ interface BookingCancellationData {
   businessName: string;
   businessPhone: string;
   cancelledBy: 'customer' | 'admin';
+  sender?: SenderConfig;
 }
 
 /**
@@ -151,15 +192,17 @@ export async function sendBookingCancellationEmail(data: BookingCancellationData
       </p>
 
       <p style="font-size: 13px; color: #888; margin-top: 16px;">📞 ${data.businessPhone}</p>
-      <p style="margin-top: 24px; font-size: 12px; color: #aaa; text-align: center;">This email was sent by ${data.businessName} via Veltrion.</p>
+      ${platformFooterHtml(data.businessName, data.sender || {})}
     </div>
   `;
 
-  const textBody = `Appointment Cancelled\n\nHi ${data.customerName},\n\n${data.cancelledBy === 'admin' ? 'Your appointment has been cancelled by the salon.' : 'Your appointment has been cancelled.'}\n\nService: ${data.serviceName}\nDate: ${data.date}\nTime: ${data.time}\n\n${data.businessPhone}`;
+  const textBody = `Appointment Cancelled\n\nHi ${data.customerName},\n\n${data.cancelledBy === 'admin' ? 'Your appointment has been cancelled by the salon.' : 'Your appointment has been cancelled.'}\n\nService: ${data.serviceName}\nDate: ${data.date}\nTime: ${data.time}\n\n${data.businessPhone}\n${platformFooterText(data.businessName, data.sender || {})}`;
 
   try {
+    const sender = data.sender || {};
     await sesClient.send(new SendEmailCommand({
-      Source: SENDER_EMAIL,
+      Source: buildSource(sender),
+      ...(sender.replyTo ? { ReplyToAddresses: [sender.replyTo] } : {}),
       Destination: { ToAddresses: [data.customerEmail] },
       Message: {
         Subject: { Data: subject },
@@ -183,6 +226,7 @@ interface BookingRescheduleData {
   stylistName: string;
   businessName: string;
   businessPhone: string;
+  sender?: SenderConfig;
 }
 
 /**
@@ -217,15 +261,17 @@ export async function sendBookingRescheduleEmail(data: BookingRescheduleData): P
 
       <p style="font-size: 13px; color: #666;">If this time doesn't work for you, please contact us to rebook.</p>
       <p style="font-size: 13px; color: #888;">📞 ${data.businessPhone}</p>
-      <p style="margin-top: 24px; font-size: 12px; color: #aaa; text-align: center;">This email was sent by ${data.businessName} via Veltrion.</p>
+      ${platformFooterHtml(data.businessName, data.sender || {})}
     </div>
   `;
 
-  const textBody = `Appointment Rescheduled\n\nHi ${data.customerName},\n\nYour appointment has been moved.\n\nPreviously: ${data.oldDate} at ${data.oldTime}\n\nNew appointment:\nService: ${data.serviceName}\nDate: ${data.newDate}\nTime: ${data.newTime}\nStylist: ${data.stylistName}\n\nIf this doesn't work, contact us: ${data.businessPhone}`;
+  const textBody = `Appointment Rescheduled\n\nHi ${data.customerName},\n\nYour appointment has been moved.\n\nPreviously: ${data.oldDate} at ${data.oldTime}\n\nNew appointment:\nService: ${data.serviceName}\nDate: ${data.newDate}\nTime: ${data.newTime}\nStylist: ${data.stylistName}\n\nIf this doesn't work, contact us: ${data.businessPhone}\n${platformFooterText(data.businessName, data.sender || {})}`;
 
   try {
+    const sender = data.sender || {};
     await sesClient.send(new SendEmailCommand({
-      Source: SENDER_EMAIL,
+      Source: buildSource(sender),
+      ...(sender.replyTo ? { ReplyToAddresses: [sender.replyTo] } : {}),
       Destination: { ToAddresses: [data.customerEmail] },
       Message: {
         Subject: { Data: subject },
@@ -247,6 +293,7 @@ interface BookingNoShowData {
   time: string;
   businessName: string;
   businessPhone: string;
+  sender?: SenderConfig;
 }
 
 /**
@@ -279,15 +326,17 @@ export async function sendBookingNoShowEmail(data: BookingNoShowData): Promise<v
       </p>
 
       <p style="font-size: 13px; color: #888; margin-top: 16px;">📞 ${data.businessPhone}</p>
-      <p style="margin-top: 24px; font-size: 12px; color: #aaa; text-align: center;">This email was sent by ${data.businessName} via Veltrion.</p>
+      ${platformFooterHtml(data.businessName, data.sender || {})}
     </div>
   `;
 
-  const textBody = `Missed Appointment\n\nHi ${data.customerName},\n\nWe noticed you didn't make it to your appointment.\n\nService: ${data.serviceName}\nDate: ${data.date}\nTime: ${data.time}\n\nIf you'd like to rebook, you can do so through the app.\n\n${data.businessPhone}`;
+  const textBody = `Missed Appointment\n\nHi ${data.customerName},\n\nWe noticed you didn't make it to your appointment.\n\nService: ${data.serviceName}\nDate: ${data.date}\nTime: ${data.time}\n\nIf you'd like to rebook, you can do so through the app.\n\n${data.businessPhone}\n${platformFooterText(data.businessName, data.sender || {})}`;
 
   try {
+    const sender = data.sender || {};
     await sesClient.send(new SendEmailCommand({
-      Source: SENDER_EMAIL,
+      Source: buildSource(sender),
+      ...(sender.replyTo ? { ReplyToAddresses: [sender.replyTo] } : {}),
       Destination: { ToAddresses: [data.customerEmail] },
       Message: {
         Subject: { Data: subject },
